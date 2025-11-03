@@ -19,8 +19,7 @@ from application.use_case.start_conversation import StartConversationUseCase
 from application.use_case.manage_profile import ManageProfileUseCase
 from application.use_case.handle_message import HandleMessageUseCase
 
-from infrastructure.database.repositories.proactive_repository import ProactiveRepository
-from application.use_case.manage_proactive_messages import ManageProactiveMessagesUseCase
+from application.use_case.manage_proactive_messages import ProactiveMessageManager
 
 from presentation.telegram.middleware import TelegramMiddleware
 
@@ -154,15 +153,32 @@ class FriendBot:
         self.middleware = TelegramMiddleware()
 
         # Инициализация проактивных сообщений
-        self.proactive_repo = ProactiveRepository(self.database)
-        self.proactive_uc = ManageProactiveMessagesUseCase(
-            self.proactive_repo, self.profile_repo
+        self.proactive_manager = ProactiveMessageManager(
+            profile_repo=self.profile_repo,
+            conversation_repo=self.conversation_repo,
+            ai_client=self.ai_client
         )
 
         # Запускаем планировщик проактивных сообщений
         self._start_proactive_scheduler()
 
+        # Запускаем мониторинг
+        self._start_proactive_monitoring()
+
         self.logger.info("FriendBot initialized successfully")
+
+    def _start_proactive_monitoring(self):
+        """Запустить мониторинг проактивных сообщений"""
+        import threading
+
+        def start_async_monitoring():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self.proactive_manager.start_monitoring())
+
+        thread = threading.Thread(target=start_async_monitoring, daemon=True)
+        thread.start()
+        self.logger.info("Proactive messages monitoring started")
 
     def _start_proactive_scheduler(self):
         """Запустить планировщик проактивных сообщений"""
@@ -279,6 +295,9 @@ class FriendBot:
             extra={'user_id': user_id, 'message_length': len(user_message)}
         )
 
+        # Обновляем активность пользователя
+        self.proactive_manager.update_user_activity(user_id, user_message)
+
         try:
             # Сохраняем пользователя
             self.user_repo.save_user(
@@ -296,33 +315,12 @@ class FriendBot:
 
             await update.message.reply_text(response)
 
-            # Проактивные сообщения (асинхронно)
-            await self._handle_proactive_messages(update, user_id)
-
         except Exception as e:
             self.logger.error(
                 f"Error handling message: {e}",
                 extra={'user_id': user_id, 'operation': 'handle_message'}
             )
             await update.message.reply_text("😔 Извини, у меня небольшие технические проблемы. Можешь повторить?")
-
-    async def _handle_proactive_messages(self, update: Update, user_id: int):
-        """Обработать проактивные сообщения (асинхронно)"""
-        try:
-            # Планируем проактивные сообщения
-            self.proactive_uc.schedule_proactive_messages(user_id)
-
-            # Проверяем есть ли сообщения для отправки сейчас
-            pending_messages = self.proactive_uc.get_pending_messages(user_id)
-            for message in pending_messages:
-                if message.should_send():
-                    await asyncio.sleep(2)  # Небольшая задержка
-                    await update.message.reply_text(message.content)
-                    self.proactive_uc.mark_message_sent(user_id, message.message_type)
-                    self.logger.info(f"Sent proactive message to user {user_id}")
-
-        except Exception as e:
-            self.logger.error(f"Error in proactive messaging: {e}")
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_text = """
