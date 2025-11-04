@@ -6,6 +6,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 from infrastructure.database.database import Database
+from infrastructure.database.repositories.proactive_repository import ProactiveRepository
 from infrastructure.database.repositories.user_repository import UserRepository
 from infrastructure.database.repositories.profile_repository import ProfileRepository
 from infrastructure.database.repositories.conversation_repository import ConversationRepository
@@ -137,6 +138,7 @@ class FriendBot:
         self.user_repo = UserRepository(self.database)
         self.profile_repo = ProfileRepository(self.database)
         self.conversation_repo = ConversationRepository(self.database)
+        self.proactive_repo = ProactiveRepository(self.database)
 
         # Используем фабрику для создания AI клиента!
         self.ai_client = AIFactory.create_client()
@@ -153,17 +155,10 @@ class FriendBot:
         self.middleware = TelegramMiddleware()
 
         # Инициализация проактивных сообщений
-        self.proactive_manager = ProactiveMessageManager(
-            profile_repo=self.profile_repo,
-            conversation_repo=self.conversation_repo,
-            ai_client=self.ai_client
-        )
+        self.proactive_manager = None
 
         # Запускаем планировщик проактивных сообщений
         self._start_proactive_scheduler()
-
-        # Запускаем мониторинг
-        self._start_proactive_monitoring()
 
         self.logger.info("FriendBot initialized successfully")
 
@@ -357,13 +352,34 @@ class FriendBot:
         self.application.add_handler(CommandHandler("health", self.health))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
+        # ТЕПЕРЬ создаем proactive manager ПОСЛЕ создания application
+        self._setup_proactive_manager()
+
+    def _setup_proactive_manager(self):
+        """Настроить проактивные сообщения после создания application"""
+        try:
+            self.proactive_manager = ProactiveMessageManager(
+                proactive_repo=self.proactive_repo,
+                profile_repo=self.profile_repo,
+                conversation_repo=self.conversation_repo,
+                ai_client=self.ai_client,
+                telegram_bot_instance=self  # ← Теперь self полностью создан
+            )
+
+            # Запускаем мониторинг
+            self._start_proactive_monitoring()
+            self.logger.info("Proactive manager initialized")
+
+        except Exception as e:
+            self.logger.error(f"Failed to setup proactive manager: {e}")
+
     def run(self):
         try:
             self.application = Application.builder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
             self.setup_handlers()
 
             self.logger.info(
-                "🤖 Бот-друг запущен!",
+                "Бот-друг запущен!",
                 extra={
                     'metrics_port': os.getenv("METRICS_PORT", "8000"),
                     'tracing_enabled': os.getenv("ENABLE_TRACING", "false")
