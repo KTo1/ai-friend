@@ -75,7 +75,7 @@ class ProactiveMessageManager:
                 last_proactive = activity.last_proactive_time or "Never"
 
                 self.logger.info(
-                    f"👤 User {user_id}: "
+                    f"User {user_id}: "
                     f"messages={activity.message_count}, "
                     f"last_activity={time_since_last.total_seconds() / 3600:.1f}h ago, "
                     f"last_proactive={last_proactive}"
@@ -97,7 +97,7 @@ class ProactiveMessageManager:
                         break  # Отправляем только одно сообщение за проверку
 
             except Exception as e:
-                self.logger.error(f"❌ Error checking proactive for user {user_id}: {e}")
+                self.logger.error(f"Error checking proactive for user {user_id}: {e}")
 
         if not proactive_sent:
             self.logger.info("No proactive messages to send at this time")

@@ -47,7 +47,7 @@ class ProactiveMessageGenerator:
                 return self._get_fallback_message(trigger, profile)
 
         except Exception as e:
-            self.logger.error(f"❌ Error generating proactive message: {e}")
+            self.logger.error(f"Error generating proactive message: {e}")
             return self._get_fallback_message(trigger, profile)
 
     def _build_system_prompt(self, profile: UserProfile, activity: UserActivity,

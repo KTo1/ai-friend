@@ -72,6 +72,7 @@ class Config:
         self._openai = OpenAIConfig()
         self._monitoring = MonitoringConfig()
         self._bot = BotConfig()
+        self._deepseek = DeepSeekConfig()
 
     @property
     def database(self):
@@ -82,12 +83,31 @@ class Config:
         return self._openai
 
     @property
+    def deepseek(self):
+        return self._deepseek
+
+    @property
     def monitoring(self):
         return self._monitoring
 
     @property
     def bot(self):
         return self._bot
+
+
+@dataclass
+class DeepSeekConfig:
+    @property
+    def api_key(self):
+        return os.getenv("DEEPSEEK_API_KEY")
+
+    @property
+    def model(self):
+        return os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+
+    @property
+    def base_url(self):
+        return os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
 
 
 config = Config()

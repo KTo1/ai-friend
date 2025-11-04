@@ -13,9 +13,11 @@ from infrastructure.ai.base_ai_client import BaseAIClient
 
 class OllamaClient(BaseAIClient, AIClientInterface):
     def __init__(self):
+        super().__init__("ollama")  # ← ВАЖНО: вызываем родительский конструктор
         self.base_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
         self.model = os.getenv("OLLAMA_MODEL", "llama2:7b")
         self.logger = StructuredLogger("ollama_client")
+        self.session = None  # ← Инициализируем session
 
     async def ensure_session(self):
         """Создать aiohttp сессию при необходимости"""
@@ -26,7 +28,7 @@ class OllamaClient(BaseAIClient, AIClientInterface):
     async def generate_response(self, messages: List[Dict], max_tokens: int = 500, temperature: float = 0.7) -> str:
         """Сгенерировать ответ с помощью Ollama (асинхронно)"""
 
-        await self.ensure_session()
+        await self.ensure_session()  # ← Убедимся, что сессия создана
         prompt = self._format_messages(messages)
 
         try:
@@ -45,6 +47,10 @@ class OllamaClient(BaseAIClient, AIClientInterface):
                         }
                     }
             ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    raise Exception(f"Ollama API error {response.status}: {error_text}")
+
                 result = await response.json()
 
             duration = time.time() - start_time

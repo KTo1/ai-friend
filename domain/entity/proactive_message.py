@@ -29,7 +29,7 @@ class UserActivity:
         now = self.get_local_time()
         last_proactive = self.last_proactive_time or datetime.fromtimestamp(0)
 
-        print(f"🔍 Checking {trigger.value}: last_proactive={last_proactive}, now={now}")
+        print(f"Checking {trigger.value}: last_proactive={last_proactive}, now={now}")
 
         if trigger == ProactiveTrigger.MORNING_GREETING:
             # Утро: 7-10 утра по местному времени, не отправляли сегодня

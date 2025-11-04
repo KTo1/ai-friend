@@ -5,7 +5,7 @@ from infrastructure.ai.ollama_client import OllamaClient
 from infrastructure.ai.gemini_client import GeminiClient
 from infrastructure.ai.huggingface_client import HuggingFaceClient
 from infrastructure.monitoring.logging import StructuredLogger
-
+from infrastructure.ai.deepseek_client import DeepSeekClient  # ← ДОБАВЬТЕ ЭТОТ ИМПОРТ
 
 class AIFactory:
     @staticmethod
@@ -33,6 +33,11 @@ class AIFactory:
         elif provider == "huggingface":
             # HF API key опционален (есть бесплатный лимит без ключа)
             return HuggingFaceClient()
+
+        elif provider == "deepseek":  # ← ДОБАВЬТЕ ЭТОТ БЛОК
+            if not os.getenv("DEEPSEEK_API_KEY"):
+                raise ValueError("DEEPSEEK_API_KEY is required for DeepSeek provider")
+            return DeepSeekClient()
 
         else:
             logger.warning(f"Unknown AI provider: {provider}. Using Ollama as default.")

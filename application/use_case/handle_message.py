@@ -40,7 +40,7 @@ class HandleMessageUseCase:
             try:
                 bot_response = await asyncio.wait_for(
                     self.ai_client.generate_response_safe(messages),
-                    timeout=45.0
+                    timeout=120.0
                 )
             except asyncio.TimeoutError:
                 self.logger.error("AI response timeout")
