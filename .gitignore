@@ -3,3 +3,4 @@ venv
 *.env
 *.db
 *.log
+project_structure*.txt
