@@ -59,7 +59,7 @@ class ProactiveMessageManager:
         if message:
             activity.message_count += 1
 
-        self.logger.info(f"📊 Updated activity for user {user_id}: {activity.message_count} messages")
+        self.logger.info(f"Updated activity for user {user_id}: {activity.message_count} messages")
 
     async def _check_proactive_messages(self):
         """Проверить и отправить проактивные сообщения"""

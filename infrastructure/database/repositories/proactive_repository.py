@@ -24,9 +24,9 @@ class ProactiveRepository:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            print("✅ Proactive repository table initialized")
+            print("Proactive repository table initialized")
         except Exception as e:
-            print(f"❌ Error initializing proactive table: {e}")
+            print(f"Error initializing proactive table: {e}")
 
     def save_activity(self, activity: UserActivity):
         """Сохранить активность пользователя"""

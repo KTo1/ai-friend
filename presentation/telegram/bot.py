@@ -379,7 +379,7 @@ class FriendBot:
             self.setup_handlers()
 
             self.logger.info(
-                "Бот-друг запущен!",
+                "Bot-friend is running!",
                 extra={
                     'metrics_port': os.getenv("METRICS_PORT", "8000"),
                     'tracing_enabled': os.getenv("ENABLE_TRACING", "false")
