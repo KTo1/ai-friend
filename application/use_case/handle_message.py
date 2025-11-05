@@ -37,6 +37,21 @@ class HandleMessageUseCase:
             metrics_collector.record_message_received("text")
             start_time = time.time()
 
+            # 🛡️ 0. ПРОВЕРКА RATE LIMITS
+            rate_limit_check = self.user_limits_repo.check_rate_limits(user_id)
+            if not rate_limit_check["allowed"]:
+                metrics_collector.record_request_blocked("rate_limit")
+                self.logger.warning(
+                    "Rate limit exceeded",
+                    extra={
+                        'user_id': user_id,
+                        'minute_count': rate_limit_check["minute_count"],
+                        'hour_count': rate_limit_check["hour_count"],
+                        'block_type': 'rate_limit'
+                    }
+                )
+                return f"Слишком частые сообщения! Лимиты: {rate_limit_check['minute_remaining']}/мин, {rate_limit_check['hour_remaining']}/час"
+
             # 🛡️ 1. ПРОВЕРКА СТАТУСА ПОЛЬЗОВАТЕЛЯ
             user_validation = await self.validate_user_access(user_id)
             if not user_validation["allowed"]:

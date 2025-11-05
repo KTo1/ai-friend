@@ -59,6 +59,12 @@ class Database:
                     max_context_messages INTEGER DEFAULT 5,
                     max_tokens_per_request INTEGER DEFAULT 1000,
                     custom_limits_enabled BOOLEAN DEFAULT FALSE,
+                    messages_per_minute INTEGER DEFAULT 10,
+                    messages_per_hour INTEGER DEFAULT 100,
+                    minute_window_start TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    minute_count INTEGER DEFAULT 0,
+                    hour_window_start TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    hour_count INTEGER DEFAULT 0,                    
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users (user_id)
                 )

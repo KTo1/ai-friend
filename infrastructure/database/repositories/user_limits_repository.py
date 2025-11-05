@@ -106,3 +106,106 @@ class UserLimitsRepository:
             (user_id,)
         )
         return result is not None
+
+    def check_rate_limits(self, user_id: int) -> Dict[str, any]:
+        """Проверить rate limits для пользователя"""
+        now = datetime.now()
+
+        # Получаем лимиты пользователя (создаем дефолтные если нет записи)
+        user_limits = self.get_user_limits(user_id)
+        if not user_limits:
+            user_limits = UserLimits()
+            self.set_user_limits(user_id, user_limits)
+            return {"allowed": True, "minute_remaining": 10, "hour_remaining": 100}
+
+        # Инициализируем временные окна если нужно
+        if not user_limits.minute_window_start:
+            user_limits.minute_window_start = now
+        if not user_limits.hour_window_start:
+            user_limits.hour_window_start = now
+
+        # Сброс счетчиков если окно истекло
+        if (now - user_limits.minute_window_start).total_seconds() > 60:
+            user_limits.minute_count = 0
+            user_limits.minute_window_start = now
+
+        if (now - user_limits.hour_window_start).total_seconds() > 3600:
+            user_limits.hour_count = 0
+            user_limits.hour_window_start = now
+
+        # Проверка лимитов
+        minute_remaining = max(0, user_limits.messages_per_minute - user_limits.minute_count)
+        hour_remaining = max(0, user_limits.messages_per_hour - user_limits.hour_count)
+
+        allowed = (user_limits.minute_count < user_limits.messages_per_minute and
+                   user_limits.hour_count < user_limits.messages_per_hour)
+
+        # Обновляем счетчики если сообщение разрешено
+        if allowed:
+            user_limits.minute_count += 1
+            user_limits.hour_count += 1
+            user_limits.updated_at = now
+            self.set_user_limits(user_id, user_limits)
+
+        return {
+            "allowed": allowed,
+            "minute_remaining": minute_remaining,
+            "hour_remaining": hour_remaining,
+            "minute_count": user_limits.minute_count,
+            "hour_count": user_limits.hour_count
+        }
+
+
+    def set_user_limits(self, user_id: int, limits: UserLimits):
+        """Установить лимиты пользователя (ОБНОВЛЕННЫЙ)"""
+        self.db.execute_query('''
+            INSERT OR REPLACE INTO user_limits 
+            (user_id, max_daily_requests, max_message_length, max_context_messages, 
+             max_tokens_per_request, custom_limits_enabled,
+             messages_per_minute, messages_per_hour, minute_window_start, minute_count,
+             hour_window_start, hour_count, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            user_id,
+            limits.max_daily_requests,
+            limits.max_message_length,
+            limits.max_context_messages,
+            limits.max_tokens_per_request,
+            limits.custom_limits_enabled,
+            # 🔧 НОВЫЕ ПОЛЯ
+            limits.messages_per_minute,
+            limits.messages_per_hour,
+            limits.minute_window_start,
+            limits.minute_count,
+            limits.hour_window_start,
+            limits.hour_count,
+            limits.updated_at or datetime.now()
+        ))
+
+
+    def get_user_limits(self, user_id: int) -> Optional[UserLimits]:
+        """Получить лимиты пользователя (ОБНОВЛЕННЫЙ)"""
+        result = self.db.fetch_one(
+            'SELECT max_daily_requests, max_message_length, max_context_messages, '
+            'max_tokens_per_request, custom_limits_enabled, '
+            'messages_per_minute, messages_per_hour, minute_window_start, minute_count, '
+            'hour_window_start, hour_count FROM user_limits WHERE user_id = ?',
+            (user_id,)
+        )
+
+        if result:
+            return UserLimits(
+                max_daily_requests=result[0],
+                max_message_length=result[1],
+                max_context_messages=result[2],
+                max_tokens_per_request=result[3],
+                custom_limits_enabled=result[4],
+                # 🔧 НОВЫЕ ПОЛЯ
+                messages_per_minute=result[5],
+                messages_per_hour=result[6],
+                minute_window_start=datetime.fromisoformat(result[7]) if result[7] else None,
+                minute_count=result[8] or 0,
+                hour_window_start=datetime.fromisoformat(result[9]) if result[9] else None,
+                hour_count=result[10] or 0
+            )
+        return None

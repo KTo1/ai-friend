@@ -52,6 +52,7 @@ class AdminUseCase:
         user = self.user_repo.get_user(target_user_id)
         limits = self.user_limits_repo.get_user_limits(target_user_id)
         usage = self.user_limits_repo.get_user_usage_today(target_user_id)
+        rate_limits = self.user_limits_repo.check_rate_limits(target_user_id)
 
         return {
             'user_info': {
@@ -63,5 +64,6 @@ class AdminUseCase:
             },
             'limits': limits.__dict__ if limits else {},
             'usage_today': usage,
+            'rate_limits': rate_limits,  # 🔧 ДОБАВИТЬ
             'remaining_requests': limits.max_daily_requests - usage['requests_count'] if limits else 0
         }

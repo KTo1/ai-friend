@@ -13,6 +13,15 @@ class UserLimits:
     max_tokens_per_request: int = 1000
     custom_limits_enabled: bool = False
 
+    # 🔧 НОВЫЕ RATE LIMITS
+    messages_per_minute: int = 10    # Максимум 10 сообщений в минуту
+    messages_per_hour: int = 100     # Максимум 100 сообщений в час
+
+    # 🔧 СЧЕТЧИКИ RATE LIMITS (технические поля)
+    minute_window_start: datetime = None
+    minute_count: int = 0
+    hour_window_start: datetime = None
+    hour_count: int = 0
 
 @dataclass
 class User:
