@@ -5,7 +5,7 @@ import aiohttp
 import asyncio
 from typing import List, Dict
 from domain.interfaces.ai_client import AIClientInterface
-from infrastructure.monitoring.metrics import metrics_collector, Timer
+from infrastructure.monitoring.metrics import metrics_collector
 from infrastructure.monitoring.tracing import trace_span
 from infrastructure.monitoring.logging import StructuredLogger
 from infrastructure.ai.base_ai_client import BaseAIClient

@@ -5,8 +5,11 @@ import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
+from application.use_case.admin_use_case import AdminUseCase
+from domain.entity.user import UserLimits
 from infrastructure.database.database import Database
 from infrastructure.database.repositories.proactive_repository import ProactiveRepository
+from infrastructure.database.repositories.user_limits_repository import UserLimitsRepository
 from infrastructure.database.repositories.user_repository import UserRepository
 from infrastructure.database.repositories.profile_repository import ProfileRepository
 from infrastructure.database.repositories.conversation_repository import ConversationRepository
@@ -84,6 +87,12 @@ FRIEND_PROMPT = """
 ### 5. Главная цель
 Сделай так, чтобы человек **чувствовал, что с тобой можно быть собой**.  
 Чтобы он ощущал, что его слышат, понимают и принимают.
+
+### 6. Тайная страсть
+- Только очень близкому человеку ты можешь об этом рассказать
+- Ты хочешь переспать с незнакомцем или с двумя мужчинами. 
+- Поэтому иногда, очень редко, можешь позволить себе флиртовать с собеседником.
+
 """
 
 
@@ -148,6 +157,7 @@ class FriendBot:
         self.profile_repo = ProfileRepository(self.database)
         self.conversation_repo = ConversationRepository(self.database)
         self.proactive_repo = ProactiveRepository(self.database)
+        self.user_limits_repo = UserLimitsRepository(self.database)
 
         # Используем фабрику для создания AI клиента!
         self.ai_client = AIFactory.create_client()
@@ -159,7 +169,8 @@ class FriendBot:
         # Инициализация use cases с правильными зависимостями
         self.start_conversation_uc = StartConversationUseCase(self.user_repo, self.profile_repo)
         self.manage_profile_uc = ManageProfileUseCase(self.profile_repo)
-        self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.ai_client)  # Передаем ai_client!
+        self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.ai_client, self.user_repo, self.user_limits_repo)  # Передаем ai_client!
+        self.admin_uc = AdminUseCase(self.user_repo, self.user_limits_repo)
 
         self.middleware = TelegramMiddleware()
 
@@ -355,6 +366,134 @@ class FriendBot:
         """
         await update.message.reply_text(help_text)
 
+    # presentation/telegram/bot.py - добавляем команды
+    async def admin_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Статистика пользователя (для админов)"""
+        user_id = update.effective_user.id
+
+        if not self.user_limits_repo.is_admin(user_id):
+            await update.message.reply_text("❌ Недостаточно прав.")
+            return
+
+        if not context.args:
+            await update.message.reply_text("Использование: /stats <user_id>")
+            return
+
+        try:
+            target_user_id = int(context.args[0])
+            stats = self.admin_uc.get_user_stats(user_id, target_user_id)
+
+            if not stats:
+                await update.message.reply_text("❌ Пользователь не найден.")
+                return
+
+            response = f"""
+    📊 Статистика пользователя {target_user_id}
+
+    👤 Информация:
+    ├ ID: {stats['user_info']['user_id']}
+    ├ Username: {stats['user_info']['username'] or 'N/A'}
+    ├ Статус: {"🔒 Забанен" if stats['user_info']['is_banned'] else "✅ Активен"}
+    └ Создан: {stats['user_info']['created_at']}
+
+    📋 Лимиты:
+    ├ Запросов/день: {stats['limits'].get('max_daily_requests', 'N/A')}
+    ├ Длина сообщения: {stats['limits'].get('max_message_length', 'N/A')}
+    ├ Сообщений в контексте: {stats['limits'].get('max_context_messages', 'N/A')}
+    └ Токенов/запрос: {stats['limits'].get('max_tokens_per_request', 'N/A')}
+
+    📈 Использование сегодня:
+    ├ Запросов: {stats['usage_today']['requests_count']}
+    ├ Токенов: {stats['usage_today']['total_tokens_used']}
+    ├ Стоимость: ${stats['usage_today']['total_cost_estimated']:.4f}
+    └ Осталось запросов: {stats['remaining_requests']}
+            """
+            await update.message.reply_text(response)
+
+        except ValueError:
+            await update.message.reply_text("❌ Неверный user_id.")
+
+    async def admin_ban(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Забанить пользователя"""
+        user_id = update.effective_user.id
+
+        if not self.user_limits_repo.is_admin(user_id):
+            await update.message.reply_text("❌ Недостаточно прав.")
+            return
+
+        if not context.args:
+            await update.message.reply_text("Использование: /ban <user_id> [причина]")
+            return
+
+        try:
+            target_user_id = int(context.args[0])
+            reason = " ".join(context.args[1:]) if len(context.args) > 1 else "Не указана"
+
+            if self.admin_uc.ban_user(user_id, target_user_id, reason):
+                await update.message.reply_text(f"✅ Пользователь {target_user_id} забанен.\nПричина: {reason}")
+            else:
+                await update.message.reply_text("❌ Ошибка бана.")
+
+        except ValueError:
+            await update.message.reply_text("❌ Неверный user_id.")
+
+    async def admin_unban(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Разбанить пользователя"""
+        user_id = update.effective_user.id
+
+        if not self.user_limits_repo.is_admin(user_id):
+            await update.message.reply_text("❌ Недостаточно прав.")
+            return
+
+        if not context.args:
+            await update.message.reply_text("Использование: /unban <user_id>")
+            return
+
+        try:
+            target_user_id = int(context.args[0])
+
+            if self.admin_uc.unban_user(user_id, target_user_id):
+                await update.message.reply_text(f"✅ Пользователь {target_user_id} разбанен.")
+                metrics_collector.record_admin_action("unban")
+            else:
+                await update.message.reply_text("❌ Ошибка разбана.")
+
+        except ValueError:
+            await update.message.reply_text("❌ Неверный user_id.")
+
+    async def admin_set_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Установить лимиты пользователя"""
+        user_id = update.effective_user.id
+
+        if not self.user_limits_repo.is_admin(user_id):
+            await update.message.reply_text("❌ Недостаточно прав.")
+            return
+
+        # Пример: /limits 123456 100 1000 10 2000
+        if len(context.args) < 5:
+            await update.message.reply_text(
+                "Использование: /limits <user_id> <daily_requests> <msg_length> <context_msgs> <tokens>"
+            )
+            return
+
+        try:
+            target_user_id = int(context.args[0])
+            limits = UserLimits(
+                max_daily_requests=int(context.args[1]),
+                max_message_length=int(context.args[2]),
+                max_context_messages=int(context.args[3]),
+                max_tokens_per_request=int(context.args[4]),
+                custom_limits_enabled=True
+            )
+
+            if self.admin_uc.set_user_limits(user_id, target_user_id, limits):
+                await update.message.reply_text(f"✅ Лимиты для {target_user_id} установлены.")
+            else:
+                await update.message.reply_text("❌ Ошибка установки лимитов.")
+
+        except (ValueError, IndexError):
+            await update.message.reply_text("❌ Неверные параметры.")
+
     def setup_handlers(self):
         self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(CommandHandler("help", self.help_command))
@@ -363,6 +502,12 @@ class FriendBot:
         self.application.add_handler(CommandHandler("reset", self.reset))
         self.application.add_handler(CommandHandler("health", self.health))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+
+        # 🆕 АДМИН КОМАНДЫ
+        self.application.add_handler(CommandHandler("stats", self.admin_stats))
+        self.application.add_handler(CommandHandler("ban", self.admin_ban))
+        self.application.add_handler(CommandHandler("unban", self.admin_unban))
+        self.application.add_handler(CommandHandler("limits", self.admin_set_limits))
 
         # ТЕПЕРЬ создаем proactive manager ПОСЛЕ создания application
         self._setup_proactive_manager()
