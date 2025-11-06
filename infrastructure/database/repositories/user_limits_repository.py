@@ -127,7 +127,7 @@ class UserLimitsRepository:
         }
 
     def set_user_limits(self, user_id: int, limits: UserLimits):
-        """Установить лимиты пользователя (ОБНОВЛЕННЫЙ)"""
+        """Установить лимиты пользователя"""
         self.db.execute_query('''
             INSERT OR REPLACE INTO user_limits 
             (user_id, max_daily_requests, max_message_length, max_context_messages, 
@@ -142,7 +142,6 @@ class UserLimitsRepository:
             limits.max_context_messages,
             limits.max_tokens_per_request,
             limits.custom_limits_enabled,
-            # 🔧 НОВЫЕ ПОЛЯ
             limits.messages_per_minute,
             limits.messages_per_hour,
             limits.minute_window_start,
@@ -152,24 +151,24 @@ class UserLimitsRepository:
             limits.updated_at or datetime.now()
         ))
 
-    def get_user_limits(self, user_id: int) -> Optional[UserLimits]:
-        """Получить лимиты пользователя"""
+    def get_user_limits(self, user_id: int) -> UserLimits:
+        """Получить лимиты пользователя, подставляя значения по умолчанию если нет в БД"""
         result = self.db.fetch_one(
             'SELECT max_daily_requests, max_message_length, max_context_messages, '
             'max_tokens_per_request, custom_limits_enabled, '
             'messages_per_minute, messages_per_hour, minute_window_start, minute_count, '
-            'hour_window_start, hour_count, updated_at FROM user_limits WHERE user_id = ?',  # 🔧 ДОБАВИТЬ updated_at
+            'hour_window_start, hour_count, updated_at FROM user_limits WHERE user_id = ?',
             (user_id,)
         )
 
         if result:
+            # Создаем объект с данными из БД
             return UserLimits(
                 max_daily_requests=result[0],
                 max_message_length=result[1],
                 max_context_messages=result[2],
                 max_tokens_per_request=result[3],
-                custom_limits_enabled=result[4],
-                # 🔧 НОВЫЕ ПОЛЯ
+                custom_limits_enabled=result[4] or False,
                 messages_per_minute=result[5],
                 messages_per_hour=result[6],
                 minute_window_start=datetime.fromisoformat(result[7]) if result[7] else None,
@@ -178,4 +177,6 @@ class UserLimitsRepository:
                 hour_count=result[10] or 0,
                 updated_at=datetime.fromisoformat(result[11]) if result[11] else None
             )
+
+        # Если записи нет - возвращаем дефолтные лимиты
         return None

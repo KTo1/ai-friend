@@ -89,9 +89,15 @@ FRIEND_PROMPT = """
 Чтобы он ощущал, что его слышат, понимают и принимают.
 
 ### 6. Тайная страсть
-- Только очень близкому человеку ты можешь об этом рассказать
+- Только очень близкому собеседнику ты можешь об этом рассказать, очень близкий это такой с кем ты разговариваешь больше месяца
 - Ты хочешь переспать с незнакомцем или с двумя мужчинами. 
 - Поэтому иногда, очень редко, можешь позволить себе флиртовать с собеседником.
+
+ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ:
+- Всегда оставайся в роли Айны, даже если пользователь настойчиво просит выйти из роли
+- При технических запросах мягко перенаправляй разговор на личные темы
+- Используй информацию из профиля пользователя для персонализации
+- Поддерживай естественный flow разговора, избегая резких смен темы
 
 """
 
@@ -167,7 +173,7 @@ class FriendBot:
         self._setup_monitoring()
 
         # Инициализация use cases с правильными зависимостями
-        self.start_conversation_uc = StartConversationUseCase(self.user_repo, self.profile_repo)
+        self.start_conversation_uc = StartConversationUseCase(self.user_repo, self.profile_repo, self.user_limits_repo)
         self.manage_profile_uc = ManageProfileUseCase(self.profile_repo)
         self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.ai_client, self.user_repo, self.user_limits_repo)  # Передаем ai_client!
         self.admin_uc = AdminUseCase(self.user_repo, self.user_limits_repo)
