@@ -1,6 +1,7 @@
 import asyncio
 from domain.service.context_service import ContextService
 from domain.interfaces.ai_client import AIClientInterface
+from domain.service.message_limit_service import MessageLimitService
 from infrastructure.database.repositories.conversation_repository import ConversationRepository
 from infrastructure.monitoring.metrics import metrics_collector, Timer
 from infrastructure.monitoring.tracing import trace_span
@@ -8,9 +9,10 @@ from infrastructure.monitoring.logging import StructuredLogger
 
 
 class HandleMessageUseCase:
-    def __init__(self, conversation_repository: ConversationRepository, ai_client: AIClientInterface):
+    def __init__(self, conversation_repository: ConversationRepository, ai_client: AIClientInterface,  message_limit_service: MessageLimitService):
         self.conversation_repo = conversation_repository
         self.ai_client = ai_client
+        self.message_limit_service = message_limit_service
         self.context_service = ContextService()
         self.logger = StructuredLogger("handle_message_uc")
 
@@ -26,8 +28,10 @@ class HandleMessageUseCase:
             # Сохраняем сообщение пользователя
             self.conversation_repo.save_message(user_id, "user", message)
 
+            message_limits = self.message_limit_service.get_user_limits(user_id)
+
             # Получаем контекст разговора
-            context_messages = self.conversation_repo.get_conversation_context(user_id) or []
+            context_messages = self.conversation_repo.get_conversation_context(user_id, message_limits.config.max_context_messages) or []
 
             metrics_collector.record_conversation_length(len(context_messages))
 

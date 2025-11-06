@@ -24,7 +24,7 @@ class ConversationRepository:
             )
         ''', (user_id, user_id))
 
-    def get_conversation_context(self, user_id: int, limit: int = 10) -> List[Dict]:
+    def get_conversation_context(self, user_id: int, max_context_messages: int = 3) -> List[Dict]:
         """Получить контекст разговора"""
         results = self.db.fetch_all('''
             SELECT role, content 
@@ -32,10 +32,28 @@ class ConversationRepository:
             WHERE user_id = ? 
             ORDER BY timestamp DESC 
             LIMIT ?
-        ''', (user_id, limit))
+        ''', (user_id, max_context_messages))
 
         return [{"role": role, "content": content} for role, content in reversed(results)]
 
     def clear_conversation(self, user_id: int):
         """Очистить историю разговора"""
         self.db.execute_query('DELETE FROM conversation_context WHERE user_id = ?', (user_id,))
+
+    def get_conversation_stats(self, user_id: int) -> Dict:
+        """Получить статистику разговора"""
+        total_messages = self.db.fetch_one(
+            'SELECT COUNT(*) FROM conversation_context WHERE user_id = ?',
+            (user_id,)
+        )[0] or 0
+
+        last_message = self.db.fetch_one('''
+            SELECT timestamp FROM conversation_context 
+            WHERE user_id = ? 
+            ORDER BY timestamp DESC LIMIT 1
+        ''', (user_id,))
+
+        return {
+            'total_messages': total_messages,
+            'last_message_time': last_message[0] if last_message else None
+        }

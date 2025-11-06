@@ -128,6 +128,11 @@ class RateLimitConfig:
     def messages_per_day(self):
         return int(os.getenv("RATE_LIMIT_PER_DAY", "500"))
 
+    @property
+    def message_limits(self):
+        return MessageLimitConfig()
+
+
 @dataclass
 class AdminConfig:
     @property
@@ -140,5 +145,21 @@ class AdminConfig:
             except ValueError:
                 return []
         return []
+
+
+@dataclass
+class MessageLimitConfig:
+    @property
+    def default_max_message_length(self):
+        return int(os.getenv("DEFAULT_MAX_MESSAGE_LENGTH", "2000"))
+
+    @property
+    def default_max_context_messages(self):
+        return int(os.getenv("DEFAULT_MAX_CONTEXT_MESSAGES", "10"))
+
+    @property
+    def default_max_context_length(self):
+        return int(os.getenv("DEFAULT_MAX_CONTEXT_LENGTH", "4000"))
+
 
 config = Config()
