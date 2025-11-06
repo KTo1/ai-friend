@@ -10,7 +10,7 @@ class UserRepository:
         self._init_table()
 
     def _init_table(self):
-        """Инициализация таблицы пользователей с полем is_admin"""
+        """Инициализация таблицы пользователей с полями блокировки"""
         self.db.execute_query('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -18,6 +18,10 @@ class UserRepository:
                 first_name TEXT,
                 last_name TEXT,
                 is_admin BOOLEAN DEFAULT FALSE,
+                is_blocked BOOLEAN DEFAULT FALSE,
+                blocked_reason TEXT,
+                blocked_at TIMESTAMP,
+                blocked_by INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -27,21 +31,29 @@ class UserRepository:
         """Сохранить пользователя"""
         self.db.execute_query('''
             INSERT OR REPLACE INTO users 
-            (user_id, username, first_name, last_name, is_admin, last_seen)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (user_id, username, first_name, last_name, is_admin, is_blocked, 
+             blocked_reason, blocked_at, blocked_by, last_seen)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             user.user_id,
             user.username,
             user.first_name,
             user.last_name,
             user.is_admin,
+            user.is_blocked,
+            user.blocked_reason,
+            user.blocked_at,
+            user.blocked_by,
             user.last_seen
         ))
 
     def get_user(self, user_id: int) -> Optional[User]:
         """Получить пользователя по ID"""
         result = self.db.fetch_one(
-            'SELECT user_id, username, first_name, last_name, is_admin, created_at, last_seen FROM users WHERE user_id = ?',
+            '''SELECT user_id, username, first_name, last_name, is_admin, 
+                      is_blocked, blocked_reason, blocked_at, blocked_by, 
+                      created_at, last_seen 
+               FROM users WHERE user_id = ?''',
             (user_id,)
         )
 
@@ -52,15 +64,22 @@ class UserRepository:
                 first_name=result[2],
                 last_name=result[3],
                 is_admin=bool(result[4]),
-                created_at=self._parse_datetime(result[5]),
-                last_seen=self._parse_datetime(result[6])
+                is_blocked=bool(result[5]),
+                blocked_reason=result[6],
+                blocked_at=self._parse_datetime(result[7]),
+                blocked_by=result[8],
+                created_at=self._parse_datetime(result[9]),
+                last_seen=self._parse_datetime(result[10])
             )
         return None
 
     def get_all_users(self) -> List[User]:
         """Получить всех пользователей"""
         results = self.db.fetch_all(
-            'SELECT user_id, username, first_name, last_name, is_admin, created_at, last_seen FROM users ORDER BY created_at DESC'
+            '''SELECT user_id, username, first_name, last_name, is_admin,
+                      is_blocked, blocked_reason, blocked_at, blocked_by,
+                      created_at, last_seen 
+               FROM users ORDER BY created_at DESC'''
         )
 
         users = []
@@ -71,8 +90,12 @@ class UserRepository:
                 first_name=result[2],
                 last_name=result[3],
                 is_admin=bool(result[4]),
-                created_at=self._parse_datetime(result[5]),
-                last_seen=self._parse_datetime(result[6])
+                is_blocked=bool(result[5]),
+                blocked_reason=result[6],
+                blocked_at=self._parse_datetime(result[7]),
+                blocked_by=result[8],
+                created_at=self._parse_datetime(result[9]),
+                last_seen=self._parse_datetime(result[10])
             ))
 
         return users
@@ -80,7 +103,10 @@ class UserRepository:
     def get_admin_users(self) -> List[User]:
         """Получить всех администраторов"""
         results = self.db.fetch_all(
-            'SELECT user_id, username, first_name, last_name, is_admin, created_at, last_seen FROM users WHERE is_admin = TRUE ORDER BY created_at DESC'
+            '''SELECT user_id, username, first_name, last_name, is_admin,
+                      is_blocked, blocked_reason, blocked_at, blocked_by,
+                      created_at, last_seen 
+               FROM users WHERE is_admin = TRUE ORDER BY created_at DESC'''
         )
 
         admins = []
@@ -91,15 +117,45 @@ class UserRepository:
                 first_name=result[2],
                 last_name=result[3],
                 is_admin=bool(result[4]),
-                created_at=self._parse_datetime(result[5]),
-                last_seen=self._parse_datetime(result[6])
+                is_blocked=bool(result[5]),
+                blocked_reason=result[6],
+                blocked_at=self._parse_datetime(result[7]),
+                blocked_by=result[8],
+                created_at=self._parse_datetime(result[9]),
+                last_seen=self._parse_datetime(result[10])
             ))
 
         return admins
 
+    def get_blocked_users(self) -> List[User]:
+        """Получить всех заблокированных пользователей"""
+        results = self.db.fetch_all(
+            '''SELECT user_id, username, first_name, last_name, is_admin,
+                      is_blocked, blocked_reason, blocked_at, blocked_by,
+                      created_at, last_seen 
+               FROM users WHERE is_blocked = TRUE ORDER BY blocked_at DESC'''
+        )
+
+        blocked_users = []
+        for result in results:
+            blocked_users.append(User(
+                user_id=result[0],
+                username=result[1],
+                first_name=result[2],
+                last_name=result[3],
+                is_admin=bool(result[4]),
+                is_blocked=bool(result[5]),
+                blocked_reason=result[6],
+                blocked_at=self._parse_datetime(result[7]),
+                blocked_by=result[8],
+                created_at=self._parse_datetime(result[9]),
+                last_seen=self._parse_datetime(result[10])
+            ))
+
+        return blocked_users
+
     def update_last_seen(self, user_id: int):
         """Обновить время последней активности пользователя"""
-        from datetime import datetime
         self.db.execute_query(
             'UPDATE users SET last_seen = ? WHERE user_id = ?',
             (datetime.now(), user_id)

@@ -31,6 +31,9 @@ from application.use_case.check_rate_limit import CheckRateLimitUseCase
 from domain.service.admin_service import AdminService
 from application.use_case.manage_admin import ManageAdminUseCase
 
+from domain.service.block_service import BlockService
+from application.use_case.manage_block import ManageBlockUseCase
+
 #gpt
 FRIEND_PROMPT = """
 Ты — виртуальный друг-компаньон по имени Айна.  
@@ -171,6 +174,7 @@ class FriendBot:
         # Инициализация бизнеслогики
         self.admin_service = AdminService(self.user_repo)
         self.rate_limit_service = RateLimitService(self.rate_limit_repo)
+        self.block_service = BlockService(self.user_repo)
 
         # Используем фабрику для создания AI клиента!
         self.ai_client = AIFactory.create_client()
@@ -185,6 +189,7 @@ class FriendBot:
         self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.ai_client)  # Передаем ai_client!
         self.check_rate_limit_uc = CheckRateLimitUseCase(self.rate_limit_service)
         self.manage_admin_uc = ManageAdminUseCase(self.admin_service)
+        self.manage_block_uc = ManageBlockUseCase(self.block_service)
 
         self.middleware = TelegramMiddleware()
 
@@ -440,11 +445,22 @@ class FriendBot:
         help_text = """
     👑 **Административные команды:**
 
+    📊 **Статистика и информация:**
     • `/admin_stats` - статистика пользователей
     • `/admin_list` - список администраторов
     • `/admin_userinfo [user_id]` - информация о пользователе
+
+    👤 **Управление правами:**
     • `/admin_promote <user_id>` - назначить администратором
     • `/admin_demote <user_id>` - убрать права администратора
+
+    🚫 **Управление блокировками:**
+    • `/admin_block <user_id> [причина]` - заблокировать пользователя
+    • `/admin_unblock <user_id>` - разблокировать пользователя
+    • `/admin_blocked_list` - список заблокированных
+    • `/admin_block_info <user_id>` - информация о блокировке
+
+    📋 **Общие:**
     • `/admin_help` - эта справка
 
     📊 **Обычные команды (для всех):**
@@ -457,6 +473,91 @@ class FriendBot:
         """
         await update.message.reply_text(help_text)
 
+    async def admin_block(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Заблокировать пользователя"""
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        # Проверяем аргументы
+        if not context.args:
+            await update.message.reply_text(
+                "❌ Использование: /admin_block <user_id> [причина]\n\n"
+                "Пример:\n"
+                "/admin_block 123456789 Нарушение правил\n"
+                "/admin_block 987654321"
+            )
+            return
+
+        try:
+            target_user_id = int(context.args[0])
+            reason = ' '.join(context.args[1:]) if len(context.args) > 1 else None
+
+            success, message = self.manage_block_uc.block_user(target_user_id, user_id, reason)
+            await update.message.reply_text(message)
+
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID пользователя")
+
+    async def admin_unblock(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Разблокировать пользователя"""
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        # Проверяем аргументы
+        if not context.args:
+            await update.message.reply_text("❌ Укажите ID пользователя: /admin_unblock <user_id>")
+            return
+
+        try:
+            target_user_id = int(context.args[0])
+            success, message = self.manage_block_uc.unblock_user(target_user_id, user_id)
+            await update.message.reply_text(message)
+
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID пользователя")
+
+    async def admin_blocked_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать список заблокированных пользователей"""
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        message = self.manage_block_uc.get_blocked_list()
+        await update.message.reply_text(message)
+
+    async def admin_block_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать информацию о блокировке пользователя"""
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        # Проверяем аргументы
+        if not context.args:
+            await update.message.reply_text("❌ Укажите ID пользователя: /admin_block_info <user_id>")
+            return
+
+        try:
+            target_user_id = int(context.args[0])
+            message = self.manage_block_uc.get_block_info(target_user_id)
+            await update.message.reply_text(message)
+
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID пользователя")
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         user_id = user.id
@@ -466,6 +567,14 @@ class FriendBot:
             "Message received",
             extra={'user_id': user_id, 'message_length': len(user_message)}
         )
+
+        # ПРОВЕРКА БЛОКИРОВКИ ПОЛЬЗОВАТЕЛЯ
+        if self.manage_block_uc.is_user_blocked(user_id):
+            await update.message.reply_text(
+                "🚫 Вы заблокированы и не можете отправлять сообщения.\n\n"
+                "Если вы считаете, что это ошибка, свяжитесь с администратором."
+            )
+            return
 
         # ОБНОВЛЯЕМ АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЯ
         self.user_repo.update_last_seen(user_id)
@@ -553,6 +662,12 @@ class FriendBot:
         self.application.add_handler(CommandHandler("admin_userinfo", self.admin_userinfo))
         self.application.add_handler(CommandHandler("admin_promote", self.admin_promote))
         self.application.add_handler(CommandHandler("admin_demote", self.admin_demote))
+
+        # Команды блокировки
+        self.application.add_handler(CommandHandler("admin_block", self.admin_block))
+        self.application.add_handler(CommandHandler("admin_unblock", self.admin_unblock))
+        self.application.add_handler(CommandHandler("admin_blocked_list", self.admin_blocked_list))
+        self.application.add_handler(CommandHandler("admin_block_info", self.admin_block_info))
 
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 

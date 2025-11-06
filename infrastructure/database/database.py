@@ -14,6 +14,7 @@ class Database:
         """Инициализация базы данных"""
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
+
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     user_id INTEGER PRIMARY KEY,
@@ -21,6 +22,10 @@ class Database:
                     first_name TEXT,
                     last_name TEXT,
                     is_admin BOOLEAN DEFAULT FALSE,
+                    is_blocked BOOLEAN DEFAULT FALSE,
+                    blocked_reason TEXT,
+                    blocked_at TIMESTAMP,
+                    blocked_by INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
