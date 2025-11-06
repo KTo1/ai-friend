@@ -28,6 +28,9 @@ from infrastructure.database.repositories.rate_limit_repository import RateLimit
 from domain.service.rate_limit_service import RateLimitService
 from application.use_case.check_rate_limit import CheckRateLimitUseCase
 
+from domain.service.admin_service import AdminService
+from application.use_case.manage_admin import ManageAdminUseCase
+
 #gpt
 FRIEND_PROMPT = """
 Ты — виртуальный друг-компаньон по имени Айна.  
@@ -164,8 +167,10 @@ class FriendBot:
         self.conversation_repo = ConversationRepository(self.database)
         self.proactive_repo = ProactiveRepository(self.database)
         self.rate_limit_repo = RateLimitRepository(self.database)
+
+        # Инициализация бизнеслогики
+        self.admin_service = AdminService(self.user_repo)
         self.rate_limit_service = RateLimitService(self.rate_limit_repo)
-        self.check_rate_limit_uc = CheckRateLimitUseCase(self.rate_limit_service)
 
         # Используем фабрику для создания AI клиента!
         self.ai_client = AIFactory.create_client()
@@ -178,6 +183,8 @@ class FriendBot:
         self.start_conversation_uc = StartConversationUseCase(self.user_repo, self.profile_repo)
         self.manage_profile_uc = ManageProfileUseCase(self.profile_repo)
         self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.ai_client)  # Передаем ai_client!
+        self.check_rate_limit_uc = CheckRateLimitUseCase(self.rate_limit_service)
+        self.manage_admin_uc = ManageAdminUseCase(self.admin_service)
 
         self.middleware = TelegramMiddleware()
 
@@ -332,6 +339,124 @@ class FriendBot:
 
         await update.message.reply_text(message)
 
+    async def admin_promote(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Назначить пользователя администратором"""
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        # Проверяем аргументы
+        if not context.args:
+            await update.message.reply_text("❌ Укажите ID пользователя: /admin_promote <user_id>")
+            return
+
+        try:
+            target_user_id = int(context.args[0])
+            success, message = self.manage_admin_uc.promote_user(target_user_id, user_id)
+            await update.message.reply_text(message)
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID пользователя")
+
+    async def admin_demote(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Убрать права администратора"""
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        # Проверяем аргументы
+        if not context.args:
+            await update.message.reply_text("❌ Укажите ID пользователя: /admin_demote <user_id>")
+            return
+
+        try:
+            target_user_id = int(context.args[0])
+            success, message = self.manage_admin_uc.demote_user(target_user_id, user_id)
+            await update.message.reply_text(message)
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID пользователя")
+
+    async def admin_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать список администраторов"""
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        message = self.manage_admin_uc.get_admin_list()
+        await update.message.reply_text(message)
+
+    async def admin_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать статистику пользователей"""
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        message = self.manage_admin_uc.get_user_stats()
+        await update.message.reply_text(message)
+
+    async def admin_userinfo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать информацию о пользователе"""
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        # Проверяем аргументы
+        if not context.args:
+            # Если аргументов нет, показываем информацию о себе
+            target_user_id = user_id
+        else:
+            try:
+                target_user_id = int(context.args[0])
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат ID пользователя")
+                return
+
+        message = self.manage_admin_uc.get_user_info(target_user_id)
+        await update.message.reply_text(message)
+
+    async def admin_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать справку по административным командам"""
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        help_text = """
+    👑 **Административные команды:**
+
+    • `/admin_stats` - статистика пользователей
+    • `/admin_list` - список администраторов
+    • `/admin_userinfo [user_id]` - информация о пользователе
+    • `/admin_promote <user_id>` - назначить администратором
+    • `/admin_demote <user_id>` - убрать права администратора
+    • `/admin_help` - эта справка
+
+    📊 **Обычные команды (для всех):**
+    • `/start` - начать общение
+    • `/profile` - управление профилем
+    • `/memory` - что я о тебе помню
+    • `/limits` - лимиты сообщений
+    • `/reset` - сбросить разговор
+    • `/health` - статус системы
+        """
+        await update.message.reply_text(help_text)
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         user_id = user.id
@@ -342,21 +467,27 @@ class FriendBot:
             extra={'user_id': user_id, 'message_length': len(user_message)}
         )
 
-        # ПРОВЕРКА ЛИМИТОВ
-        can_send, limit_message = self.check_rate_limit_uc.execute(user_id)
-        if not can_send:
-            await update.message.reply_text(limit_message)
-            return
+        # ОБНОВЛЯЕМ АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЯ
+        self.user_repo.update_last_seen(user_id)
 
-        # Обновляем активность пользователя
+        # ПРОВЕРКА ЛИМИТОВ (только для обычных пользователей)
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            can_send, limit_message = self.check_rate_limit_uc.execute(user_id)
+            if not can_send:
+                await update.message.reply_text(limit_message)
+                return
+
+        # Обновляем активность пользователя для проактивных сообщений
         if self.proactive_manager:
             self.proactive_manager.update_user_activity(user_id, user_message)
 
         try:
-            # Сохраняем пользователя
-            self.user_repo.save_user(
-                self.middleware.create_user_from_telegram(user)
-            )
+            # Сохраняем пользователя (если еще не сохранен)
+            existing_user = self.user_repo.get_user(user_id)
+            if not existing_user:
+                self.user_repo.save_user(
+                    self.middleware.create_user_from_telegram(user)
+                )
 
             # Извлекаем и обновляем профиль
             profile_data = self.manage_profile_uc.extract_and_update_profile(user_id, user_message)
@@ -367,8 +498,9 @@ class FriendBot:
                 user_id, user_message, FRIEND_PROMPT, profile
             )
 
-            # ЗАПИСЫВАЕМ ИСПОЛЬЗОВАНИЕ СООБЩЕНИЯ
-            self.check_rate_limit_uc.record_message_usage(user_id)
+            # ЗАПИСЫВАЕМ ИСПОЛЬЗОВАНИЕ СООБЩЕНИЯ (только для обычных пользователей)
+            if not self.manage_admin_uc.is_user_admin(user_id):
+                self.check_rate_limit_uc.record_message_usage(user_id)
 
             await update.message.reply_text(response)
 
@@ -413,6 +545,15 @@ class FriendBot:
         self.application.add_handler(CommandHandler("reset", self.reset))
         self.application.add_handler(CommandHandler("health", self.health))
         self.application.add_handler(CommandHandler("limits", self.limits))
+
+        # Административные команды
+        self.application.add_handler(CommandHandler("admin_help", self.admin_help))
+        self.application.add_handler(CommandHandler("admin_stats", self.admin_stats))
+        self.application.add_handler(CommandHandler("admin_list", self.admin_list))
+        self.application.add_handler(CommandHandler("admin_userinfo", self.admin_userinfo))
+        self.application.add_handler(CommandHandler("admin_promote", self.admin_promote))
+        self.application.add_handler(CommandHandler("admin_demote", self.admin_demote))
+
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
         # ТЕПЕРЬ создаем proactive manager ПОСЛЕ создания application
