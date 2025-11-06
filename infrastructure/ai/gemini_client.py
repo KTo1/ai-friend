@@ -30,9 +30,9 @@ class GeminiClient(BaseAIClient, AIClientInterface):
 
         try:
             self.model = genai.GenerativeModel(self.model_name)
-            self.logger.info(f"✅ Gemini model initialized: {self.model_name}")
+            self.logger.info(f"Gemini model initialized: {self.model_name}")
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize model: {e}")
+            self.logger.error(f"Failed to initialize model: {e}")
             raise
 
     def _get_available_models(self) -> Dict:

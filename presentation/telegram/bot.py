@@ -430,19 +430,19 @@ class FriendBot:
             reason = " ".join(context.args[1:]) if len(context.args) > 1 else "Не указана"
 
             if self.admin_uc.ban_user(user_id, target_user_id, reason):
-                await update.message.reply_text(f"✅ Пользователь {target_user_id} забанен.\nПричина: {reason}")
+                await update.message.reply_text(f"Пользователь {target_user_id} забанен.\nПричина: {reason}")
             else:
-                await update.message.reply_text("❌ Ошибка бана.")
+                await update.message.reply_text("Ошибка бана.")
 
         except ValueError:
-            await update.message.reply_text("❌ Неверный user_id.")
+            await update.message.reply_text("Неверный user_id.")
 
     async def admin_unban(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Разбанить пользователя"""
         user_id = update.effective_user.id
 
         if not self.user_limits_repo.is_admin(user_id):
-            await update.message.reply_text("❌ Недостаточно прав.")
+            await update.message.reply_text("Недостаточно прав.")
             return
 
         if not context.args:
@@ -453,20 +453,20 @@ class FriendBot:
             target_user_id = int(context.args[0])
 
             if self.admin_uc.unban_user(user_id, target_user_id):
-                await update.message.reply_text(f"✅ Пользователь {target_user_id} разбанен.")
+                await update.message.reply_text(f"Пользователь {target_user_id} разбанен.")
                 metrics_collector.record_admin_action("unban")
             else:
-                await update.message.reply_text("❌ Ошибка разбана.")
+                await update.message.reply_text("Ошибка разбана.")
 
         except ValueError:
-            await update.message.reply_text("❌ Неверный user_id.")
+            await update.message.reply_text("Неверный user_id.")
 
     async def admin_set_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Установить лимиты пользователя"""
         user_id = update.effective_user.id
 
         if not self.user_limits_repo.is_admin(user_id):
-            await update.message.reply_text("❌ Недостаточно прав.")
+            await update.message.reply_text("Недостаточно прав.")
             return
 
         # Пример: /limits 123456 100 1000 10 2000
@@ -487,12 +487,12 @@ class FriendBot:
             )
 
             if self.admin_uc.set_user_limits(user_id, target_user_id, limits):
-                await update.message.reply_text(f"✅ Лимиты для {target_user_id} установлены.")
+                await update.message.reply_text(f"Лимиты для {target_user_id} установлены.")
             else:
-                await update.message.reply_text("❌ Ошибка установки лимитов.")
+                await update.message.reply_text("Ошибка установки лимитов.")
 
         except (ValueError, IndexError):
-            await update.message.reply_text("❌ Неверные параметры.")
+            await update.message.reply_text("Неверные параметры.")
 
     def setup_handlers(self):
         self.application.add_handler(CommandHandler("start", self.start))

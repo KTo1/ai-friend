@@ -65,8 +65,8 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt", exc
             except Exception as e:
                 f.write(f"# Ошибка чтения файла: {e}\n")
 
-    print(f"✅ Структура проекта сохранена в: {output_file}")
-    print(f"📊 Найдено Python файлов: {len(python_files)}")
+    print(f"Структура проекта сохранена в: {output_file}")
+    print(f"Найдено Python файлов: {len(python_files)}")
 
 
 def get_compact_structure(root_dir=".", output_file="project_compact.txt"):

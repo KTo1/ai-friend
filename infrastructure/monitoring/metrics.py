@@ -216,7 +216,7 @@ class MetricsCollector:
             try:
                 start_http_server(metrics_port)
                 self._server_started = True
-                self.logger.info(f"✅ Metrics server started on port {metrics_port}")
+                self.logger.info(f"Metrics server started on port {metrics_port}")
 
                 # Логируем доступные метрики
                 available_metrics = [
@@ -226,10 +226,10 @@ class MetricsCollector:
                     'requests_blocked_total',
                     'api_cost_estimate_total'
                 ]
-                self.logger.info(f"📊 Available metrics: {', '.join(available_metrics)}")
+                self.logger.info(f"Available metrics: {', '.join(available_metrics)}")
 
             except Exception as e:
-                self.logger.error(f"❌ Failed to start metrics server: {e}")
+                self.logger.error(f"Failed to start metrics server: {e}")
 
     def get_metrics(self) -> str:
         """Получить метрики в текстовом формате для Prometheus"""

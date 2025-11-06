@@ -93,7 +93,7 @@ class ProactiveMessageManager:
                     if activity.should_send_proactive(trigger):
                         await self._send_proactive_message(user_id, activity, trigger)
                         proactive_sent = True
-                        self.logger.info(f"✅ Sent {trigger.value} to user {user_id}")
+                        self.logger.info(f"Sent {trigger.value} to user {user_id}")
                         break  # Отправляем только одно сообщение за проверку
 
             except Exception as e:
