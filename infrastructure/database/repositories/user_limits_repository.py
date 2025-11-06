@@ -176,6 +176,6 @@ class UserLimitsRepository:
                 minute_count=result[8] or 0,
                 hour_window_start=datetime.fromisoformat(result[9]) if result[9] else None,
                 hour_count=result[10] or 0,
-                updated_at=datetime.fromisoformat(result[11]) if result[11] else None  # 🔧 ДОБАВИТЬ
+                updated_at=datetime.fromisoformat(result[11]) if result[11] else None
             )
         return None
