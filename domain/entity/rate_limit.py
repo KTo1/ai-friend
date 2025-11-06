@@ -1,0 +1,107 @@
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Dict, Optional
+
+
+@dataclass
+class RateLimitConfig:
+    """Конфигурация лимитов сообщений"""
+    messages_per_minute: int = 10
+    messages_per_hour: int = 100
+    messages_per_day: int = 500
+
+    @classmethod
+    def from_env(cls) -> 'RateLimitConfig':
+        """Создать конфигурацию из переменных окружения"""
+        return cls(
+            messages_per_minute=int(cls._get_env("RATE_LIMIT_PER_MINUTE", "10")),
+            messages_per_hour=int(cls._get_env("RATE_LIMIT_PER_HOUR", "100")),
+            messages_per_day=int(cls._get_env("RATE_LIMIT_PER_DAY", "500"))
+        )
+
+    @staticmethod
+    def _get_env(key: str, default: str) -> str:
+        import os
+        return os.getenv(key, default)
+
+
+@dataclass
+class UserRateLimit:
+    """Трекер лимитов для пользователя"""
+    user_id: int
+    message_counts: Dict[str, int]  # period -> count
+    last_reset: Dict[str, datetime]  # period -> last reset time
+    config: RateLimitConfig
+
+    def __init__(self, user_id: int, config: RateLimitConfig):
+        self.user_id = user_id
+        self.config = config
+        self.message_counts = {
+            'minute': 0,
+            'hour': 0,
+            'day': 0
+        }
+        self.last_reset = {
+            'minute': datetime.utcnow(),
+            'hour': datetime.utcnow(),
+            'day': datetime.utcnow()
+        }
+
+    def can_send_message(self) -> bool:
+        """Проверить, может ли пользователь отправить сообщение"""
+        self._reset_if_needed()
+
+        return (self.message_counts['minute'] < self.config.messages_per_minute and
+                self.message_counts['hour'] < self.config.messages_per_hour and
+                self.message_counts['day'] < self.config.messages_per_day)
+
+    def record_message(self):
+        """Записать отправку сообщения"""
+        self._reset_if_needed()
+
+        for period in ['minute', 'hour', 'day']:
+            self.message_counts[period] += 1
+
+    def get_remaining_messages(self) -> Dict[str, int]:
+        """Получить оставшееся количество сообщений по периодам"""
+        self._reset_if_needed()
+
+        return {
+            'minute': max(0, self.config.messages_per_minute - self.message_counts['minute']),
+            'hour': max(0, self.config.messages_per_hour - self.message_counts['hour']),
+            'day': max(0, self.config.messages_per_day - self.message_counts['day'])
+        }
+
+    def get_time_until_reset(self, period: str) -> timedelta:
+        """Получить время до сброса лимита"""
+        now = datetime.utcnow()
+
+        if period == 'minute':
+            next_reset = self.last_reset['minute'] + timedelta(minutes=1)
+        elif period == 'hour':
+            next_reset = self.last_reset['hour'] + timedelta(hours=1)
+        elif period == 'day':
+            next_reset = self.last_reset['day'] + timedelta(days=1)
+        else:
+            return timedelta(0)
+
+        return max(timedelta(0), next_reset - now)
+
+    def _reset_if_needed(self):
+        """Сбросить счетчики если период истек"""
+        now = datetime.utcnow()
+
+        # Сброс минутного лимита
+        if now - self.last_reset['minute'] >= timedelta(minutes=1):
+            self.message_counts['minute'] = 0
+            self.last_reset['minute'] = now
+
+        # Сброс часового лимита
+        if now - self.last_reset['hour'] >= timedelta(hours=1):
+            self.message_counts['hour'] = 0
+            self.last_reset['hour'] = now
+
+        # Сброс дневного лимита
+        if now - self.last_reset['day'] >= timedelta(days=1):
+            self.message_counts['day'] = 0
+            self.last_reset['day'] = now

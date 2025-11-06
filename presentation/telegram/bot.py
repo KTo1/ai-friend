@@ -24,6 +24,10 @@ from application.use_case.manage_proactive_messages import ProactiveMessageManag
 
 from presentation.telegram.middleware import TelegramMiddleware
 
+from infrastructure.database.repositories.rate_limit_repository import RateLimitRepository
+from domain.service.rate_limit_service import RateLimitService
+from application.use_case.check_rate_limit import CheckRateLimitUseCase
+
 #gpt
 FRIEND_PROMPT = """
 Ты — виртуальный друг-компаньон по имени Айна.  
@@ -159,6 +163,9 @@ class FriendBot:
         self.profile_repo = ProfileRepository(self.database)
         self.conversation_repo = ConversationRepository(self.database)
         self.proactive_repo = ProactiveRepository(self.database)
+        self.rate_limit_repo = RateLimitRepository(self.database)
+        self.rate_limit_service = RateLimitService(self.rate_limit_repo)
+        self.check_rate_limit_uc = CheckRateLimitUseCase(self.rate_limit_service)
 
         # Используем фабрику для создания AI клиента!
         self.ai_client = AIFactory.create_client()
@@ -303,6 +310,28 @@ class FriendBot:
 
         await update.message.reply_text(response)
 
+    async def limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать текущие лимиты пользователя"""
+        user_id = update.effective_user.id
+
+        self.logger.info("Limits command received", extra={'user_id': user_id})
+
+        limits_info = self.check_rate_limit_uc.get_limits_info(user_id)
+
+        message = "📊 Твои лимиты сообщений:\n\n"
+        message += f"• В минуту: {limits_info['current']['minute']}/{limits_info['limits']['minute']}\n"
+        message += f"• В час: {limits_info['current']['hour']}/{limits_info['limits']['hour']}\n"
+        message += f"• В день: {limits_info['current']['day']}/{limits_info['limits']['day']}\n\n"
+
+        message += "⏳ Сброс через:\n"
+        message += f"• Минута: {limits_info['time_until_reset']['minute']}\n"
+        message += f"• Час: {limits_info['time_until_reset']['hour']}\n"
+        message += f"• День: {limits_info['time_until_reset']['day']}\n\n"
+
+        message += "Лимиты защищают от перегрузки и помогают мне работать стабильно 💫"
+
+        await update.message.reply_text(message)
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         user_id = user.id
@@ -313,8 +342,15 @@ class FriendBot:
             extra={'user_id': user_id, 'message_length': len(user_message)}
         )
 
+        # ПРОВЕРКА ЛИМИТОВ
+        can_send, limit_message = self.check_rate_limit_uc.execute(user_id)
+        if not can_send:
+            await update.message.reply_text(limit_message)
+            return
+
         # Обновляем активность пользователя
-        self.proactive_manager.update_user_activity(user_id, user_message)
+        if self.proactive_manager:
+            self.proactive_manager.update_user_activity(user_id, user_message)
 
         try:
             # Сохраняем пользователя
@@ -330,6 +366,9 @@ class FriendBot:
             response = await self.handle_message_uc.execute(
                 user_id, user_message, FRIEND_PROMPT, profile
             )
+
+            # ЗАПИСЫВАЕМ ИСПОЛЬЗОВАНИЕ СООБЩЕНИЯ
+            self.check_rate_limit_uc.record_message_usage(user_id)
 
             await update.message.reply_text(response)
 
@@ -373,6 +412,7 @@ class FriendBot:
         self.application.add_handler(CommandHandler("memory", self.memory))
         self.application.add_handler(CommandHandler("reset", self.reset))
         self.application.add_handler(CommandHandler("health", self.health))
+        self.application.add_handler(CommandHandler("limits", self.limits))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
         # ТЕПЕРЬ создаем proactive manager ПОСЛЕ создания application

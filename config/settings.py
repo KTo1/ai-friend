@@ -94,6 +94,10 @@ class Config:
     def bot(self):
         return self._bot
 
+    @property
+    def rate_limit(self):
+        return RateLimitConfig()
+
 
 @dataclass
 class DeepSeekConfig:
@@ -109,5 +113,19 @@ class DeepSeekConfig:
     def base_url(self):
         return os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
 
+
+@dataclass
+class RateLimitConfig:
+    @property
+    def messages_per_minute(self):
+        return int(os.getenv("RATE_LIMIT_PER_MINUTE", "10"))
+
+    @property
+    def messages_per_hour(self):
+        return int(os.getenv("RATE_LIMIT_PER_HOUR", "100"))
+
+    @property
+    def messages_per_day(self):
+        return int(os.getenv("RATE_LIMIT_PER_DAY", "500"))
 
 config = Config()
