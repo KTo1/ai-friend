@@ -10,6 +10,10 @@ class User:
     first_name: Optional[str]
     last_name: Optional[str]
     is_admin: bool = False
+    is_blocked: bool = False
+    blocked_reason: Optional[str] = None
+    blocked_at: Optional[datetime] = None
+    blocked_by: Optional[int] = None
     created_at: datetime = None
     last_seen: datetime = None
 
@@ -30,3 +34,17 @@ class User:
     def demote_from_admin(self):
         """Убрать права администратора"""
         self.is_admin = False
+
+    def block_user(self, blocked_by: int, reason: Optional[str] = None):
+        """Заблокировать пользователя"""
+        self.is_blocked = True
+        self.blocked_reason = reason
+        self.blocked_at = datetime.now()
+        self.blocked_by = blocked_by
+
+    def unblock_user(self):
+        """Разблокировать пользователя"""
+        self.is_blocked = False
+        self.blocked_reason = None
+        self.blocked_at = None
+        self.blocked_by = None
