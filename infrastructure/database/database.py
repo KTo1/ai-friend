@@ -14,14 +14,15 @@ class Database:
         """Инициализация базы данных"""
         with sqlite3.connect(self.db_name) as conn:
             cursor = conn.cursor()
-
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     user_id INTEGER PRIMARY KEY,
                     username TEXT,
                     first_name TEXT,
                     last_name TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    is_admin BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
 

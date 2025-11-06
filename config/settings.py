@@ -128,4 +128,17 @@ class RateLimitConfig:
     def messages_per_day(self):
         return int(os.getenv("RATE_LIMIT_PER_DAY", "500"))
 
+@dataclass
+class AdminConfig:
+    @property
+    def default_admin_ids(self):
+        import os
+        admin_ids_str = os.getenv("DEFAULT_ADMIN_IDS", "")
+        if admin_ids_str:
+            try:
+                return [int(id_str.strip()) for id_str in admin_ids_str.split(",")]
+            except ValueError:
+                return []
+        return []
+
 config = Config()

@@ -75,10 +75,10 @@ class RateLimitRepository:
                 rate_limit = UserRateLimit(user_id, config)
                 rate_limit.message_counts = message_counts
 
-                # Восстанавливаем даты
+                # Восстанавливаем даты с безопасным парсингом
                 for period in ['minute', 'hour', 'day']:
                     if period in last_reset_data:
-                        rate_limit.last_reset[period] = datetime.fromisoformat(last_reset_data[period])
+                        rate_limit.last_reset[period] = self._parse_datetime(last_reset_data[period])
 
                 return rate_limit
 
@@ -93,3 +93,30 @@ class RateLimitRepository:
             'DELETE FROM user_rate_limits WHERE user_id = ?',
             (user_id,)
         )
+
+    def _parse_datetime(self, dt_value) -> datetime:
+        """Парсинг datetime из различных форматов"""
+        if dt_value is None:
+            return datetime.utcnow()
+
+        if isinstance(dt_value, datetime):
+            return dt_value
+
+        if isinstance(dt_value, str):
+            try:
+                # Пробуем разные форматы дат
+                for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f',
+                            '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f',
+                            '%Y-%m-%d %H:%M:%S.%f%z', '%Y-%m-%dT%H:%M:%S.%f%z']:
+                    try:
+                        return datetime.strptime(dt_value, fmt)
+                    except ValueError:
+                        continue
+
+                # Если ни один формат не подошел, возвращаем текущее время
+                return datetime.utcnow()
+            except Exception:
+                return datetime.utcnow()
+
+        # Если непонятный тип, возвращаем текущее время
+        return datetime.utcnow()
