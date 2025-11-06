@@ -10,7 +10,7 @@ class UserLimits:
     max_daily_requests: int = 50
     max_message_length: int = 500
     max_context_messages: int = 5
-    max_tokens_per_request: int = 1000
+    max_tokens_per_request: int = 1200
     custom_limits_enabled: bool = False
 
     # 🔧 НОВЫЕ RATE LIMITS
