@@ -9,6 +9,7 @@ from application.use_case.admin_use_case import AdminUseCase
 from domain.entity.user import UserLimits
 from infrastructure.database.database import Database
 from infrastructure.database.repositories.proactive_repository import ProactiveRepository
+from infrastructure.database.repositories.rate_limit_repository import RateLimitRepository
 from infrastructure.database.repositories.user_limits_repository import UserLimitsRepository
 from infrastructure.database.repositories.user_repository import UserRepository
 from infrastructure.database.repositories.profile_repository import ProfileRepository
@@ -159,11 +160,13 @@ class FriendBot:
 
         # Инициализация инфраструктуры
         self.database = Database()
+
+        self.rate_limit_repo = RateLimitRepository(self.database)
         self.user_repo = UserRepository(self.database)
         self.profile_repo = ProfileRepository(self.database)
         self.conversation_repo = ConversationRepository(self.database)
         self.proactive_repo = ProactiveRepository(self.database)
-        self.user_limits_repo = UserLimitsRepository(self.database)
+        self.user_limits_repo = UserLimitsRepository(self.database, self.rate_limit_repo)
 
         # Используем фабрику для создания AI клиента!
         self.ai_client = AIFactory.create_client()

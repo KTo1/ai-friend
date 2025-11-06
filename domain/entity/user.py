@@ -17,21 +17,8 @@ class UserLimits:
     messages_per_minute: int = 3
     messages_per_hour: int = 60
 
-    # СЧЕТЧИКИ RATE LIMITS (технические поля)
-    minute_window_start: datetime = None
-    minute_count: int = 0
-    hour_window_start: datetime = None
-    hour_count: int = 0
     updated_at: datetime = None
 
-    def __post_init__(self):
-        """Инициализация временных меток если они None"""
-        if self.updated_at is None:
-            self.updated_at = datetime.now()
-        if self.minute_window_start is None:
-            self.minute_window_start = datetime.now()
-        if self.hour_window_start is None:
-            self.hour_window_start = datetime.now()
 
 @dataclass
 class User:

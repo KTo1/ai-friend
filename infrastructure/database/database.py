@@ -61,10 +61,6 @@ class Database:
                     custom_limits_enabled BOOLEAN DEFAULT FALSE,
                     messages_per_minute INTEGER,                   
                     messages_per_hour INTEGER,                     
-                    minute_window_start TIMESTAMP,
-                    minute_count INTEGER DEFAULT 0,
-                    hour_window_start TIMESTAMP, 
-                    hour_count INTEGER DEFAULT 0,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users (user_id)
                 )
