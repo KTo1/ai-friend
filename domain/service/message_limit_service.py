@@ -64,6 +64,26 @@ class MessageLimitService:
 
         return True, ""
 
+    def get_user_limits_config(self, user_id: int) -> MessageLimitConfig:
+        """Получить конфигурацию лимитов пользователя"""
+        message_limit = self._get_or_create_user_limit(user_id)
+        return MessageLimitConfig(
+            max_message_length=message_limit.config.max_message_length,
+            max_context_messages=message_limit.config.max_context_messages,
+            max_context_length=message_limit.config.max_context_length
+        )
+
+    def update_user_limits_config(self, user_id: int, **limits) -> bool:
+        """Обновить конфигурацию лимитов пользователя"""
+        message_limit = self._get_or_create_user_limit(user_id)
+
+        for key, value in limits.items():
+            if hasattr(message_limit.config, key):
+                setattr(message_limit.config, key, value)
+
+        self._save_user_limit(message_limit)
+        return True
+
     def get_user_limits(self, user_id: int) -> UserMessageLimit:
         """Получить лимиты пользователя"""
         return self._get_or_create_user_limit(user_id)
