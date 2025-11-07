@@ -180,8 +180,8 @@ class FriendBot:
 
         # Инициализация бизнеслогики
         self.admin_service = AdminService(self.user_repo)
-        self.rate_limit_service = RateLimitService(self.rate_limit_repo)
         self.block_service = BlockService(self.user_repo)
+        self.rate_limit_service = RateLimitService(self.rate_limit_repo)
         self.message_limit_service = MessageLimitService(self.message_limit_repo)
 
         # Используем фабрику для создания AI клиента!
@@ -960,6 +960,21 @@ class FriendBot:
         except Exception as e:
             self.logger.error(f"Failed to setup proactive manager: {e}")
 
+    async def cleanup(self):
+        """Корректное завершение работы"""
+        self.logger.info("Cleaning up resources...")
+
+        # Закрываем AI клиенты
+        if hasattr(self, 'ai_client'):
+            await self.ai_client.close()
+
+        # Закрываем сессии HTTP клиентов
+        if hasattr(self, 'proactive_manager') and self.proactive_manager:
+            if hasattr(self.proactive_manager.ai_client, 'close'):
+                await self.proactive_manager.ai_client.close()
+
+        self.logger.info("Cleanup completed")
+
     def run(self):
         try:
             self.application = Application.builder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
@@ -973,8 +988,23 @@ class FriendBot:
                 }
             )
 
+            # Регистрируем обработчик завершения
+            import signal
+            import functools
+
+            def signal_handler(signum, frame):
+                self.logger.info(f"Received signal {signum}, shutting down...")
+                # Создаем асинхронную задачу для cleanup
+                loop = asyncio.get_event_loop()
+                asyncio.create_task(self.cleanup())
+
+            signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+            signal.signal(signal.SIGTERM, signal_handler)  # systemd stop
+
             self.application.run_polling()
 
         except Exception as e:
             self.logger.error(f"Failed to start bot: {e}")
+            # Принудительно закрываем ресурсы при ошибке
+            asyncio.run(self.cleanup())
             raise

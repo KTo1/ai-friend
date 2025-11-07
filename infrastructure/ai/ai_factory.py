@@ -1,11 +1,13 @@
 import os
+import asyncio
 from domain.interfaces.ai_client import AIClientInterface
 from infrastructure.ai.openai_client import OpenAIClient
 from infrastructure.ai.ollama_client import OllamaClient
 from infrastructure.ai.gemini_client import GeminiClient
 from infrastructure.ai.huggingface_client import HuggingFaceClient
+from infrastructure.ai.deepseek_client import DeepSeekClient
 from infrastructure.monitoring.logging import StructuredLogger
-from infrastructure.ai.deepseek_client import DeepSeekClient  # ← ДОБАВЬТЕ ЭТОТ ИМПОРТ
+
 
 class AIFactory:
     @staticmethod
@@ -31,10 +33,9 @@ class AIFactory:
             return GeminiClient()
 
         elif provider == "huggingface":
-            # HF API key опционален (есть бесплатный лимит без ключа)
             return HuggingFaceClient()
 
-        elif provider == "deepseek":  # ← ДОБАВЬТЕ ЭТОТ БЛОК
+        elif provider == "deepseek":
             if not os.getenv("DEEPSEEK_API_KEY"):
                 raise ValueError("DEEPSEEK_API_KEY is required for DeepSeek provider")
             return DeepSeekClient()
@@ -42,3 +43,9 @@ class AIFactory:
         else:
             logger.warning(f"Unknown AI provider: {provider}. Using Ollama as default.")
             return OllamaClient()
+
+    @staticmethod
+    async def create_client_async() -> AIClientInterface:
+        """Создать AI клиент асинхронно (для использования в async контексте)"""
+        # Для большинства клиентов синхронное создание достаточно
+        return AIFactory.create_client()

@@ -43,4 +43,5 @@ class BaseAIClient(ABC):
         pass
 
     async def close(self):
+        """Закрыть ресурсы по умолчанию (можно переопределить)"""
         pass
