@@ -41,10 +41,13 @@ class UserRateLimit:
             'hour': 0,
             'day': 0
         }
+        now = datetime.utcnow()
         self.last_reset = {
-            'minute': datetime.utcnow(),
-            'hour': datetime.utcnow(),
-            'day': datetime.utcnow()
+            'minute': now,
+            'hour': now,
+            'hour_start': now.replace(minute=0, second=0, microsecond=0),  # Начало текущего часа
+            'day': now,
+            'day_start': now.replace(hour=0, minute=0, second=0, microsecond=0)  # Начало текущего дня
         }
 
     def can_send_message(self) -> bool:
@@ -77,11 +80,14 @@ class UserRateLimit:
         now = datetime.utcnow()
 
         if period == 'minute':
-            next_reset = self.last_reset['minute'] + timedelta(minutes=1)
+            # Сброс в начале следующей минуты
+            next_reset = (self.last_reset['minute'] + timedelta(minutes=1)).replace(second=0, microsecond=0)
         elif period == 'hour':
-            next_reset = self.last_reset['hour'] + timedelta(hours=1)
+            # Сброс в начале следующего часа
+            next_reset = self.last_reset['hour_start'] + timedelta(hours=1)
         elif period == 'day':
-            next_reset = self.last_reset['day'] + timedelta(days=1)
+            # Сброс в начале следующего дня
+            next_reset = self.last_reset['day_start'] + timedelta(days=1)
         else:
             return timedelta(0)
 
@@ -96,12 +102,16 @@ class UserRateLimit:
             self.message_counts['minute'] = 0
             self.last_reset['minute'] = now
 
-        # Сброс часового лимита
-        if now - self.last_reset['hour'] >= timedelta(hours=1):
+        # Сброс часового лимита - в начале каждого часа
+        current_hour_start = now.replace(minute=0, second=0, microsecond=0)
+        if current_hour_start > self.last_reset['hour_start']:
             self.message_counts['hour'] = 0
             self.last_reset['hour'] = now
+            self.last_reset['hour_start'] = current_hour_start
 
-        # Сброс дневного лимита
-        if now - self.last_reset['day'] >= timedelta(days=1):
+        # Сброс дневного лимита - в начале каждого дня
+        current_day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        if current_day_start > self.last_reset['day_start']:
             self.message_counts['day'] = 0
             self.last_reset['day'] = now
+            self.last_reset['day_start'] = current_day_start
