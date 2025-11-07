@@ -192,7 +192,7 @@ class FriendBot:
         # Инициализация use cases с правильными зависимостями
         self.start_conversation_uc = StartConversationUseCase(self.user_repo, self.profile_repo)
         self.manage_profile_uc = ManageProfileUseCase(self.profile_repo)
-        self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.ai_client)  # Передаем ai_client!
+        self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.ai_client,  self.message_limit_service)
         self.check_rate_limit_uc = CheckRateLimitUseCase(self.rate_limit_service)
         self.manage_admin_uc = ManageAdminUseCase(self.admin_service)
         self.manage_block_uc = ManageBlockUseCase(self.block_service)
@@ -804,6 +804,7 @@ class FriendBot:
                 proactive_repo=self.proactive_repo,
                 profile_repo=self.profile_repo,
                 conversation_repo=self.conversation_repo,
+                message_limit_service = self.message_limit_service,
                 ai_client=self.ai_client,
                 telegram_bot_instance=self  # ← Теперь self полностью создан
             )

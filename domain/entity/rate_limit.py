@@ -6,17 +6,17 @@ from typing import Dict, Optional
 @dataclass
 class RateLimitConfig:
     """Конфигурация лимитов сообщений"""
-    messages_per_minute: int = 10
-    messages_per_hour: int = 100
-    messages_per_day: int = 500
+    messages_per_minute: int = 2
+    messages_per_hour: int = 15
+    messages_per_day: int = 30
 
     @classmethod
     def from_env(cls) -> 'RateLimitConfig':
         """Создать конфигурацию из переменных окружения"""
         return cls(
-            messages_per_minute=int(cls._get_env("RATE_LIMIT_PER_MINUTE", "10")),
-            messages_per_hour=int(cls._get_env("RATE_LIMIT_PER_HOUR", "100")),
-            messages_per_day=int(cls._get_env("RATE_LIMIT_PER_DAY", "500"))
+            messages_per_minute=int(cls._get_env("RATE_LIMIT_PER_MINUTE", "2")),
+            messages_per_hour=int(cls._get_env("RATE_LIMIT_PER_HOUR", "15")),
+            messages_per_day=int(cls._get_env("RATE_LIMIT_PER_DAY", "30"))
         )
 
     @staticmethod

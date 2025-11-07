@@ -41,7 +41,7 @@ class ProactiveMessageGenerator:
             )
 
             if response and self._is_valid_proactive_message(response):
-                self.logger.info(f"✅ Generated proactive message for user {user_id}")
+                self.logger.info(f"Generated proactive message for user {user_id}")
                 return response.strip()
             else:
                 return self._get_fallback_message(trigger, profile)

@@ -118,15 +118,15 @@ class DeepSeekConfig:
 class RateLimitConfig:
     @property
     def messages_per_minute(self):
-        return int(os.getenv("RATE_LIMIT_PER_MINUTE", "10"))
+        return int(os.getenv("RATE_LIMIT_PER_MINUTE", "2"))
 
     @property
     def messages_per_hour(self):
-        return int(os.getenv("RATE_LIMIT_PER_HOUR", "100"))
+        return int(os.getenv("RATE_LIMIT_PER_HOUR", "15"))
 
     @property
     def messages_per_day(self):
-        return int(os.getenv("RATE_LIMIT_PER_DAY", "500"))
+        return int(os.getenv("RATE_LIMIT_PER_DAY", "30"))
 
     @property
     def message_limits(self):
