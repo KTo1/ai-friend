@@ -69,6 +69,26 @@ class RateLimitService:
             }
         )
 
+    def get_user_limits_config(self, user_id: int) -> RateLimitConfig:
+        """Получить конфигурацию лимитов пользователя"""
+        rate_limit = self._get_or_create_rate_limit(user_id)
+        return RateLimitConfig(
+            messages_per_minute=rate_limit.config.messages_per_minute,
+            messages_per_hour=rate_limit.config.messages_per_hour,
+            messages_per_day=rate_limit.config.messages_per_day
+        )
+
+    def update_user_limits_config(self, user_id: int, **limits) -> bool:
+        """Обновить конфигурацию лимитов пользователя"""
+        rate_limit = self._get_or_create_rate_limit(user_id)
+
+        for key, value in limits.items():
+            if hasattr(rate_limit.config, key):
+                setattr(rate_limit.config, key, value)
+
+        self._save_rate_limit(rate_limit)
+        return True
+
     def get_user_limits_info(self, user_id: int) -> Dict:
         """Получить информацию о лимитах пользователя"""
         rate_limit = self._get_or_create_rate_limit(user_id)

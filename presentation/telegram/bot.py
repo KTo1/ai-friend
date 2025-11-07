@@ -38,6 +38,8 @@ from infrastructure.database.repositories.message_limit_repository import Messag
 from domain.service.message_limit_service import MessageLimitService
 from application.use_case.validate_message import ValidateMessageUseCase
 
+from application.use_case.manage_user_limits import ManageUserLimitsUseCase
+
 #gpt
 FRIEND_PROMPT = """
 Ты — виртуальный друг-компаньон по имени Айна.  
@@ -197,6 +199,11 @@ class FriendBot:
         self.manage_admin_uc = ManageAdminUseCase(self.admin_service)
         self.manage_block_uc = ManageBlockUseCase(self.block_service)
         self.validate_message_uc = ValidateMessageUseCase(self.message_limit_service)
+        # Единый use case для управления лимитами
+        self.manage_user_limits_uc = ManageUserLimitsUseCase(
+            self.rate_limit_service,
+            self.message_limit_service
+        )
 
         self.middleware = TelegramMiddleware()
 
@@ -433,29 +440,37 @@ class FriendBot:
 
         help_text = """
     👑 **Административные команды:**
-
+        
     📊 **Статистика и информация:**
-    • `/admin_stats` - статистика пользователей
+    • `/admin_stats` - общая статистика пользователей
     • `/admin_list` - список администраторов
     • `/admin_userinfo [user_id]` - информация о пользователе
     • `/admin_message_stats [user_id]` - статистика сообщений
-
+    • `/admin_limits [user_id]` - ВСЕ лимиты пользователя
+    
+    ⚙️ **Управление лимитами:**
+    • `/admin_set_limits <user_id> <лимиты>` - установить любые лимиты
+    • `/admin_reset_limits <user_id>` - сбросить все лимиты
+    • `/admin_limits_help` - справка по лимитам
+    
     👤 **Управление правами:**
     • `/admin_promote <user_id>` - назначить администратором
     • `/admin_demote <user_id>` - убрать права администратора
-
+    
     🚫 **Управление блокировками:**
     • `/admin_block <user_id> [причина]` - заблокировать пользователя
     • `/admin_unblock <user_id>` - разблокировать пользователя
     • `/admin_blocked_list` - список заблокированных
     • `/admin_block_info <user_id>` - информация о блокировке
-
-    📏 **Управление лимитами сообщений:**
-    • `/admin_set_message_limits <user_id> <параметр=значение>` - установить лимиты
-    • `/admin_reset_message_limits <user_id>` - сбросить лимиты
-
-    📋 **Общие:**
-    • `/admin_help` - эта справка
+    
+    📈 **Устаревшие команды (для совместимости):**
+    • `/admin_set_message_limits` - используйте `/admin_set_limits`
+    • `/admin_reset_message_limits` - используйте `/admin_reset_limits`
+    
+    💡 **Примеры использования:**
+    `/admin_set_limits 123456789 messages_per_hour=50 max_message_length=3000`
+    `/admin_limits 123456789` - посмотреть все лимиты
+    `/admin_message_stats 123456789` - статистика сообщений
 
     📊 **Обычные команды (для всех):**
     • `/start` - начать общение
@@ -673,6 +688,125 @@ class FriendBot:
 
         await update.message.reply_text(response)
 
+    async def admin_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать ВСЕ лимиты пользователя"""
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        # Проверяем аргументы
+        if not context.args:
+            # Если аргументов нет, показываем свои лимиты
+            target_user_id = user_id
+        else:
+            try:
+                target_user_id = int(context.args[0])
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат ID пользователя")
+                return
+
+        # Получаем ВСЕ лимиты пользователя
+        user_limits = self.manage_user_limits_uc.get_all_limits(target_user_id)
+        limits_dict = user_limits.to_dict()
+
+        message = f"📊 **Все лимиты пользователя {target_user_id}:**\n\n"
+
+        # Рейт-лимиты
+        message += "🕒 **Рейт-лимиты:**\n"
+        rate_limits = limits_dict['rate_limits']
+        message += f"• В минуту: {rate_limits['messages_per_minute']} сообщений\n"
+        message += f"• В час: {rate_limits['messages_per_hour']} сообщений\n"
+        message += f"• В день: {rate_limits['messages_per_day']} сообщений\n\n"
+
+        # Лимиты сообщений
+        message += "📏 **Лимиты сообщений:**\n"
+        message_limits = limits_dict['message_limits']
+        message += f"• Макс. длина сообщения: {message_limits['max_message_length']} символов\n"
+        message += f"• Макс. сообщений в истории: {message_limits['max_context_messages']}\n"
+        message += f"• Макс. длина контекста: {message_limits['max_context_length']} символов\n\n"
+
+        message += "💡 Используйте `/admin_set_limits` для изменения"
+
+        await update.message.reply_text(message)
+
+    async def admin_set_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Установить ЛЮБЫЕ лимиты пользователя"""
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        # Проверяем аргументы
+        if len(context.args) < 2:
+            help_text = self.manage_user_limits_uc.get_available_limits_info()
+            await update.message.reply_text(help_text)
+            return
+
+        try:
+            target_user_id = int(context.args[0])
+            limits = {}
+
+            # Парсим все параметры
+            for arg in context.args[1:]:
+                if '=' in arg:
+                    key, value = arg.split('=', 1)
+                    # Преобразуем значения в числа
+                    if value.isdigit():
+                        limits[key] = int(value)
+                    else:
+                        await update.message.reply_text(f"❌ Неверное значение для {key}: {value}")
+                        return
+
+            if not limits:
+                await update.message.reply_text("❌ Не указаны лимиты для изменения")
+                return
+
+            # Обновляем лимиты
+            success, message = self.manage_user_limits_uc.update_limits(target_user_id, **limits)
+            await update.message.reply_text(message)
+
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID пользователя")
+
+    async def admin_reset_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Сбросить ВСЕ лимиты пользователя"""
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        # Проверяем аргументы
+        if not context.args:
+            await update.message.reply_text("❌ Укажите ID пользователя: /admin_reset_limits <user_id>")
+            return
+
+        try:
+            target_user_id = int(context.args[0])
+            success, message = self.manage_user_limits_uc.reset_all_limits(target_user_id)
+            await update.message.reply_text(message)
+
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID пользователя")
+
+    async def admin_limits_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать справку по лимитам"""
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        help_text = self.manage_user_limits_uc.get_available_limits_info()
+        await update.message.reply_text(help_text)
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         user_id = user.id
@@ -795,6 +929,12 @@ class FriendBot:
         self.application.add_handler(CommandHandler("admin_message_stats", self.admin_message_stats))
         self.application.add_handler(CommandHandler("admin_set_message_limits", self.admin_set_message_limits))
         self.application.add_handler(CommandHandler("admin_reset_message_limits", self.admin_reset_message_limits))
+
+        # ЕДИНЫЕ команды управления лимитами
+        self.application.add_handler(CommandHandler("admin_limits", self.admin_limits))
+        self.application.add_handler(CommandHandler("admin_set_limits", self.admin_set_limits))
+        self.application.add_handler(CommandHandler("admin_reset_limits", self.admin_reset_limits))
+        self.application.add_handler(CommandHandler("admin_limits_help", self.admin_limits_help))
 
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
