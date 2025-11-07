@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Optional
+from typing import Optional
 from datetime import datetime
 from domain.entity.rate_limit import UserRateLimit, RateLimitConfig
 from infrastructure.database.database import Database
@@ -31,7 +31,9 @@ class RateLimitRepository:
             'last_reset': {
                 'minute': rate_limit.last_reset['minute'].isoformat(),
                 'hour': rate_limit.last_reset['hour'].isoformat(),
-                'day': rate_limit.last_reset['day'].isoformat()
+                'hour_start': rate_limit.last_reset['hour_start'].isoformat(),
+                'day': rate_limit.last_reset['day'].isoformat(),
+                'day_start': rate_limit.last_reset['day_start'].isoformat()
             },
             'config': {
                 'messages_per_minute': rate_limit.config.messages_per_minute,
@@ -76,9 +78,9 @@ class RateLimitRepository:
                 rate_limit.message_counts = message_counts
 
                 # Восстанавливаем даты с безопасным парсингом
-                for period in ['minute', 'hour', 'day']:
-                    if period in last_reset_data:
-                        rate_limit.last_reset[period] = self._parse_datetime(last_reset_data[period])
+                for key in ['minute', 'hour', 'hour_start', 'day', 'day_start']:
+                    if key in last_reset_data:
+                        rate_limit.last_reset[key] = self._parse_datetime(last_reset_data[key])
 
                 return rate_limit
 
