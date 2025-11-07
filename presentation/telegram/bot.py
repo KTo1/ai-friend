@@ -311,24 +311,6 @@ class FriendBot:
         self.conversation_repo.clear_conversation(user_id)
         await update.message.reply_text("🧹 Давай начнем наш разговор заново! Как твои дела?")
 
-    async def health(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
-
-        self.logger.info("Health check requested", extra={'user_id': user_id})
-
-        health_status = self.health_checker.perform_health_check()
-
-        status_emoji = "🟢" if health_status.status == "healthy" else "🟡" if health_status.status == "degraded" else "🔴"
-
-        response = f"{status_emoji} **System Health: {health_status.status.upper()}**\n\n"
-
-        for check_name, details in health_status.details.items():
-            check_emoji = "✅" if details.get('status') == 'healthy' else "⚠️" if details.get(
-                'status') == 'degraded' else "❌"
-            response += f"{check_emoji} **{check_name}**: {details.get('status', 'unknown')}\n"
-
-        await update.message.reply_text(response)
-
     async def limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать текущие лимиты пользователя"""
         user_id = update.effective_user.id
@@ -668,6 +650,29 @@ class FriendBot:
         except ValueError:
             await update.message.reply_text("❌ Неверный формат ID пользователя")
 
+    async def admin_health(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        self.logger.info("Health check requested", extra={'user_id': user_id})
+
+        health_status = self.health_checker.perform_health_check()
+
+        status_emoji = "🟢" if health_status.status == "healthy" else "🟡" if health_status.status == "degraded" else "🔴"
+
+        response = f"{status_emoji} **System Health: {health_status.status.upper()}**\n\n"
+
+        for check_name, details in health_status.details.items():
+            check_emoji = "✅" if details.get('status') == 'healthy' else "⚠️" if details.get(
+                'status') == 'degraded' else "❌"
+            response += f"{check_emoji} **{check_name}**: {details.get('status', 'unknown')}\n"
+
+        await update.message.reply_text(response)
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         user_id = user.id
@@ -747,7 +752,6 @@ class FriendBot:
 /profile - посмотреть и изменить профиль
 /memory - что я о тебе помню
 /reset - начать разговор заново
-/health - проверить статус системы (админ)
 
 Я запомню:
 • Как тебя зовут
@@ -770,7 +774,6 @@ class FriendBot:
         self.application.add_handler(CommandHandler("profile", self.profile))
         self.application.add_handler(CommandHandler("memory", self.memory))
         self.application.add_handler(CommandHandler("reset", self.reset))
-        self.application.add_handler(CommandHandler("health", self.health))
         self.application.add_handler(CommandHandler("limits", self.limits))
 
         # Административные команды
@@ -780,6 +783,7 @@ class FriendBot:
         self.application.add_handler(CommandHandler("admin_userinfo", self.admin_userinfo))
         self.application.add_handler(CommandHandler("admin_promote", self.admin_promote))
         self.application.add_handler(CommandHandler("admin_demote", self.admin_demote))
+        self.application.add_handler(CommandHandler("admin_health", self.admin_health))
 
         # Команды блокировки
         self.application.add_handler(CommandHandler("admin_block", self.admin_block))
