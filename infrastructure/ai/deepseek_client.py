@@ -16,16 +16,19 @@ class DeepSeekClient(BaseAIClient, AIClientInterface):
         self.base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
         self.model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
         self.logger = StructuredLogger("deepseek_client")
-        self.session = None
+        self._session = None
+        self._session_lock = asyncio.Lock()
 
         if not self.api_key:
             self.logger.warning("DEEPSEEK_API_KEY not set - DeepSeek client will not work")
 
-    async def ensure_session(self):
-        """Создать aiohttp сессию при необходимости"""
-        if self.session is None or self.session.closed:
-            timeout = aiohttp.ClientTimeout(total=60)
-            self.session = aiohttp.ClientSession(timeout=timeout)
+    async def get_session(self) -> aiohttp.ClientSession:
+        """Получить или создать aiohttp сессию (потокобезопасно)"""
+        async with self._session_lock:
+            if self._session is None or self._session.closed:
+                timeout = aiohttp.ClientTimeout(total=60)
+                self._session = aiohttp.ClientSession(timeout=timeout)
+            return self._session
 
     @trace_span("deepseek.generate_response", attributes={"component": "ai"})
     async def generate_response(self, messages: List[Dict], max_tokens: int = 500, temperature: float = 0.7) -> str:
@@ -34,7 +37,7 @@ class DeepSeekClient(BaseAIClient, AIClientInterface):
         if not self.api_key:
             raise ValueError("DEEPSEEK_API_KEY is required")
 
-        await self.ensure_session()
+        session = await self.get_session()
 
         try:
             import time
@@ -56,7 +59,7 @@ class DeepSeekClient(BaseAIClient, AIClientInterface):
                 "stream": False
             }
 
-            async with self.session.post(
+            async with session.post(
                     f"{self.base_url}/chat/completions",
                     json=payload,
                     headers=headers
@@ -99,6 +102,13 @@ class DeepSeekClient(BaseAIClient, AIClientInterface):
             )
             raise
 
+    async def close(self):
+        """Закрыть HTTP сессию"""
+        async with self._session_lock:
+            if self._session and not self._session.closed:
+                await self._session.close()
+                self._session = None
+
     def _prepare_messages(self, messages: List[Dict]) -> List[Dict]:
         """Подготовка сообщений для DeepSeek API"""
         prepared_messages = []
@@ -116,8 +126,3 @@ class DeepSeekClient(BaseAIClient, AIClientInterface):
                 prepared_messages.append({"role": role, "content": content})
 
         return prepared_messages
-
-    async def close(self):
-        """Закрыть HTTP сессию"""
-        if self.session:
-            await self.session.close()
