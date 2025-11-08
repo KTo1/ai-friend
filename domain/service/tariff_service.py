@@ -85,9 +85,11 @@ class TariffService:
         """Получить тариф пользователя"""
         return self.tariff_repo.get_user_tariff(user_id)
 
-    def apply_tariff_limits_to_user(self, user_id: int, user_limits_service,
-                                    rate_limit_service) -> Tuple[bool, str]:
-        """Применить лимиты тарифа к пользователю"""
+    def apply_tariff_limits_to_user(self, user_id: int, user_limits_uc: Any) -> Tuple[bool, str]:
+        """
+        Применить лимиты тарифа к пользователю.
+        user_limits_uc - это ManageUserLimitsUseCase
+        """
         try:
             user_tariff = self.get_user_tariff(user_id)
             if not user_tariff or not user_tariff.tariff_plan:
@@ -99,24 +101,29 @@ class TariffService:
                 else:
                     return False, "❌ Не найден тариф по умолчанию"
 
-            # Получаем текущие лимиты пользователя
-            user_limits = user_limits_service.get_all_limits(user_id)
+            # 1. Получаем текущие лимиты пользователя (UserLimits object)
+            user_limits = user_limits_uc.get_all_limits(user_id)
 
-            # Применяем лимиты тарифа
+            # 2. Применяем лимиты тарифа (in-memory)
             user_tariff.tariff_plan.apply_to_user_limits(user_limits)
 
-            # Сохраняем обновленные лимиты
-            rate_limit_service.update_user_limits_config(user_id, **{
+            # 3. Собираем ВСЕ лимиты в один словарь
+            all_limits_to_update = {
+                # Rate limits
                 'messages_per_minute': user_limits.rate_limits.messages_per_minute,
                 'messages_per_hour': user_limits.rate_limits.messages_per_hour,
-                'messages_per_day': user_limits.rate_limits.messages_per_day
-            })
-
-            user_limits_service.update_user_limits_config(user_id, **{
+                'messages_per_day': user_limits.rate_limits.messages_per_day,
+                # Message limits
                 'max_message_length': user_limits.message_limits.max_message_length,
                 'max_context_messages': user_limits.message_limits.max_context_messages,
                 'max_context_length': user_limits.message_limits.max_context_length
-            })
+            }
+
+            # 4. Обновляем все лимиты ОДНИМ вызовом
+            success, message = user_limits_uc.update_limits(user_id, **all_limits_to_update)
+
+            if not success:
+                raise Exception(message)  # Передаем ошибку дальше
 
             self.logger.info(f"Applied tariff limits to user {user_id}")
             return True, f"✅ Лимиты тарифа '{user_tariff.tariff_plan.name}' применены к пользователю {user_id}"

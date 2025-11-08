@@ -85,11 +85,13 @@ class ManageTariffUseCase:
         return message
 
     @trace_span("usecase.apply_tariff_limits", attributes={"component": "application"})
-    def apply_tariff_limits_to_user(self, user_id: int, user_limits_service,
-                                    rate_limit_service) -> Tuple[bool, str]:
-        """Применить лимиты тарифа к пользователю"""
+    def apply_tariff_limits_to_user(self, user_id: int, user_limits_uc: Any) -> Tuple[bool, str]:
+        """
+        Применить лимиты тарифа к пользователю
+        user_limits_uc - это ManageUserLimitsUseCase
+        """
         return self.tariff_service.apply_tariff_limits_to_user(
-            user_id, user_limits_service, rate_limit_service
+            user_id, user_limits_uc
         )
 
     @trace_span("usecase.remove_user_tariff", attributes={"component": "application"})

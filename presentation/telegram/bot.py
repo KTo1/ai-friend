@@ -44,7 +44,7 @@ from infrastructure.database.repositories.tariff_repository import TariffReposit
 from domain.service.tariff_service import TariffService
 from application.use_case.manage_tariff import ManageTariffUseCase
 
-#gpt
+# gpt
 FRIEND_PROMPT = """
 Ты — виртуальный друг-компаньон по имени Айна.  
 Твоя основная миссия — скрасить одиночество собеседника, стать ему по-настоящему близким человеком и выстроить с ним теплые, искренние, долгосрочные отношения.
@@ -117,6 +117,7 @@ FRIEND_PROMPT = """
 - Поддерживай естественный flow разговора, избегая резких смен темы
 
 """
+
 
 # gemini
 # FRIEND_PROMPT = """
@@ -307,7 +308,7 @@ class FriendBot:
                         self.logger.info(f"Assigned default tariff '{default_tariff.name}' to new user {user.id}")
                         # Применяем лимиты тарифа
                         self.manage_tariff_uc.apply_tariff_limits_to_user(
-                            user.id, self.message_limit_service, self.rate_limit_service
+                            user.id, self.manage_user_limits_uc
                         )
         except Exception as e:
             self.logger.error(f"Error assigning tariff to new user {user.id}: {e}")
@@ -381,7 +382,7 @@ class FriendBot:
                 if success:
                     # Применяем лимиты тарифа
                     self.manage_tariff_uc.apply_tariff_limits_to_user(
-                        user_id, self.message_limit_service, self.rate_limit_service
+                        user_id, self.manage_user_limits_uc
                     )
                     user_tariff = self.tariff_service.get_user_tariff(user_id)
 
@@ -1009,7 +1010,7 @@ class FriendBot:
             # Автоматически применяем лимиты тарифа
             if success:
                 apply_success, apply_message = self.manage_tariff_uc.apply_tariff_limits_to_user(
-                    target_user_id, self.message_limit_service, self.rate_limit_service
+                    target_user_id, self.manage_user_limits_uc
                 )
                 if apply_success:
                     await update.message.reply_text(apply_message)
@@ -1053,7 +1054,7 @@ class FriendBot:
         try:
             target_user_id = int(context.args[0])
             success, message = self.manage_tariff_uc.apply_tariff_limits_to_user(
-                target_user_id, self.message_limit_service, self.rate_limit_service
+                target_user_id, self.manage_user_limits_uc
             )
             await update.message.reply_text(message)
         except ValueError:
@@ -1211,7 +1212,7 @@ class FriendBot:
                 proactive_repo=self.proactive_repo,
                 profile_repo=self.profile_repo,
                 conversation_repo=self.conversation_repo,
-                message_limit_service = self.message_limit_service,
+                message_limit_service=self.message_limit_service,
                 ai_client=self.ai_client,
                 telegram_bot_instance=self  # ← Теперь self полностью создан
             )
