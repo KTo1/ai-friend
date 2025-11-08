@@ -40,6 +40,10 @@ from application.use_case.validate_message import ValidateMessageUseCase
 
 from application.use_case.manage_user_limits import ManageUserLimitsUseCase
 
+from infrastructure.database.repositories.tariff_repository import TariffRepository
+from domain.service.tariff_service import TariffService
+from application.use_case.manage_tariff import ManageTariffUseCase
+
 #gpt
 FRIEND_PROMPT = """
 Ты — виртуальный друг-компаньон по имени Айна.  
@@ -177,12 +181,14 @@ class FriendBot:
         self.proactive_repo = ProactiveRepository(self.database)
         self.rate_limit_repo = RateLimitRepository(self.database)
         self.message_limit_repo = MessageLimitRepository(self.database)
+        self.tariff_repo = TariffRepository(self.database)
 
         # Инициализация бизнеслогики
         self.admin_service = AdminService(self.user_repo)
         self.block_service = BlockService(self.user_repo)
         self.rate_limit_service = RateLimitService(self.rate_limit_repo)
         self.message_limit_service = MessageLimitService(self.message_limit_repo)
+        self.tariff_service = TariffService(self.tariff_repo)
 
         # Используем фабрику для создания AI клиента!
         self.ai_client = AIFactory.create_client()
@@ -204,6 +210,7 @@ class FriendBot:
             self.rate_limit_service,
             self.message_limit_service
         )
+        self.manage_tariff_uc = ManageTariffUseCase(self.tariff_service)
 
         self.middleware = TelegramMiddleware()
 
@@ -289,6 +296,22 @@ class FriendBot:
             extra={'user_id': user.id, 'username': user.username}
         )
 
+        # НАЗНАЧЕНИЕ ТАРИФА ПО УМОЛЧАНИЮ ПРИ ПЕРВОМ СТАРТЕ
+        try:
+            user_tariff = self.tariff_service.get_user_tariff(user.id)
+            if not user_tariff:
+                default_tariff = self.tariff_service.get_default_tariff()
+                if default_tariff:
+                    success, message = self.tariff_service.assign_tariff_to_user(user.id, default_tariff.id)
+                    if success:
+                        self.logger.info(f"Assigned default tariff '{default_tariff.name}' to new user {user.id}")
+                        # Применяем лимиты тарифа
+                        self.manage_tariff_uc.apply_tariff_limits_to_user(
+                            user.id, self.message_limit_service, self.rate_limit_service
+                        )
+        except Exception as e:
+            self.logger.error(f"Error assigning tariff to new user {user.id}: {e}")
+
         response = self.start_conversation_uc.execute(
             user.id, user.username, user.first_name, user.last_name
         )
@@ -338,6 +361,108 @@ class FriendBot:
 
         message += "Лимиты защищают от перегрузки и помогают мне работать стабильно 💫"
 
+        await update.message.reply_text(message)
+
+    async def tariff(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать информацию о моем тарифном плане"""
+        user = update.effective_user
+        user_id = user.id
+
+        self.logger.info("My tariff command received", extra={'user_id': user_id})
+
+        # Получаем информацию о тарифе пользователя
+        user_tariff = self.tariff_service.get_user_tariff(user_id)
+
+        if not user_tariff:
+            # Если тариф не назначен, назначаем тариф по умолчанию
+            default_tariff = self.tariff_service.get_default_tariff()
+            if default_tariff:
+                success, message = self.tariff_service.assign_tariff_to_user(user_id, default_tariff.id)
+                if success:
+                    # Применяем лимиты тарифа
+                    self.manage_tariff_uc.apply_tariff_limits_to_user(
+                        user_id, self.message_limit_service, self.rate_limit_service
+                    )
+                    user_tariff = self.tariff_service.get_user_tariff(user_id)
+
+            if not user_tariff:
+                response = (
+                    "📊 **Ваш тарифный план:**\n\n"
+                    "❌ Тарифный план не назначен\n\n"
+                    "💡 Обратитесь к администратору для назначения тарифа"
+                )
+                await update.message.reply_text(response)
+                return
+
+        # Формируем сообщение для пользователя
+        tariff = user_tariff.tariff_plan
+        response = f"📊 **Ваш тарифный план:**\n\n"
+        response += f"• **{tariff.name}** - {tariff.price} руб./месяц\n"
+        response += f"• {tariff.description}\n\n"
+
+        # Информация о сроке действия
+        if user_tariff.expires_at:
+            days_remaining = user_tariff.days_remaining()
+            response += f"• Истекает: {user_tariff.expires_at.strftime('%d.%m.%Y')}\n"
+            response += f"• Осталось дней: {days_remaining}\n"
+            if user_tariff.is_expired():
+                response += "• ⚠️ **ВАШ ТАРИФ ИСТЕК**\n"
+        else:
+            response += "• Срок действия: бессрочно\n"
+
+        response += f"• Статус: {'✅ Активен' if user_tariff.is_active else '❌ Неактивен'}\n\n"
+
+        # Лимиты тарифа (только важная информация для пользователя)
+        response += "📏 **Ваши лимиты:**\n"
+        response += f"• Сообщений в минуту: {tariff.rate_limits.messages_per_minute}\n"
+        response += f"• Сообщений в час: {tariff.rate_limits.messages_per_hour}\n"
+        response += f"• Сообщений в день: {tariff.rate_limits.messages_per_day}\n\n"
+
+        response += f"• Длина сообщения: до {tariff.message_limits.max_message_length} символов\n"
+        response += f"• Сохраняется история: {tariff.message_limits.max_context_messages} сообщений\n"
+        response += f"• Длина контекста: {tariff.message_limits.max_context_length} токенов\n\n"
+
+        # Особенности тарифа
+        if tariff.features:
+            response += "🌟 **Возможности:**\n"
+            if 'ai_providers' in tariff.features:
+                providers = ', '.join(tariff.features['ai_providers'])
+                response += f"• AI-провайдеры: {providers}\n"
+            if 'support' in tariff.features:
+                support_level = tariff.features['support']
+                support_text = {
+                    'basic': 'Базовая поддержка',
+                    'priority': 'Приоритетная поддержка',
+                    '24/7': 'Поддержка 24/7'
+                }.get(support_level, support_level)
+                response += f"• Поддержка: {support_text}\n"
+
+        response += "\n💡 Используйте /limits чтобы посмотреть текущее использование"
+
+        await update.message.reply_text(response)
+
+    async def admin_users(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать список пользователей"""
+        user_id = update.effective_user.id
+
+        # Проверяем права администратора
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        # Парсим параметры (номер страницы)
+        page = 1
+        if context.args:
+            try:
+                page = int(context.args[0])
+                if page < 1:
+                    page = 1
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат номера страницы")
+                return
+
+        # Получаем список пользователей
+        message = self.manage_admin_uc.get_users_list(page=page)
         await update.message.reply_text(message)
 
     async def admin_promote(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -441,12 +566,23 @@ class FriendBot:
         help_text = """
     👑 **Административные команды:**
         
+    📋 **Списки и информация:**
+    • `/admin_users [страница]` - список всех пользователей
+    • `/admin_list` - список администраторов
+    • `/admin_blocked_list` - список заблокированных
+    • `/admin_tariffs` - список тарифных планов
+    
     📊 **Статистика и информация:**
     • `/admin_stats` - общая статистика пользователей
-    • `/admin_list` - список администраторов
     • `/admin_userinfo [user_id]` - информация о пользователе
     • `/admin_message_stats [user_id]` - статистика сообщений
     • `/admin_limits [user_id]` - ВСЕ лимиты пользователя
+    • `/admin_user_tariff [user_id]` - тариф пользователя
+    • `/admin_tariff_info <ID>` - информация о тарифе
+    
+    💰 **Управление тарифами:**
+    • `/admin_assign_tariff <user_id> <tariff_id> [дней]` - назначить тариф
+    • `/admin_apply_tariff_limits <user_id>` - применить лимиты тарифа
     
     ⚙️ **Управление лимитами:**
     • `/admin_set_limits <user_id> <лимиты>` - установить любые лимиты
@@ -466,11 +602,16 @@ class FriendBot:
     📈 **Устаревшие команды (для совместимости):**
     • `/admin_set_message_limits` - используйте `/admin_set_limits`
     • `/admin_reset_message_limits` - используйте `/admin_reset_limits`
-    
-    💡 **Примеры использования:**
+        
+     **Примеры использования:**
     `/admin_set_limits 123456789 messages_per_hour=50 max_message_length=3000`
     `/admin_limits 123456789` - посмотреть все лимиты
     `/admin_message_stats 123456789` - статистика сообщений
+    
+    💡 **Примеры использования:**
+    `/admin_assign_tariff 123456789 1 30` - назначить тариф 1 на 30 дней
+    `/admin_user_tariff 123456789` - посмотреть тариф пользователя
+    `/admin_tariffs` - список доступных тарифов
 
     📊 **Обычные команды (для всех):**
     • `/start` - начать общение
@@ -807,6 +948,117 @@ class FriendBot:
         help_text = self.manage_user_limits_uc.get_available_limits_info()
         await update.message.reply_text(help_text)
 
+    async def admin_tariffs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать список тарифных планов"""
+        user_id = update.effective_user.id
+
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        message = self.manage_tariff_uc.get_all_tariffs()
+        await update.message.reply_text(message)
+
+    async def admin_tariff_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать информацию о тарифном плане"""
+        user_id = update.effective_user.id
+
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        if not context.args:
+            await update.message.reply_text("❌ Укажите ID тарифа: /admin_tariff_info <ID>")
+            return
+
+        try:
+            tariff_id = int(context.args[0])
+            message = self.manage_tariff_uc.get_tariff_info(tariff_id)
+            await update.message.reply_text(message)
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID тарифа")
+
+    async def admin_assign_tariff(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Назначить тариф пользователю"""
+        user_id = update.effective_user.id
+
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        if len(context.args) < 2:
+            await update.message.reply_text(
+                "❌ Использование: /admin_assign_tariff <user_id> <tariff_id> [дней]\n\n"
+                "Пример:\n"
+                "/admin_assign_tariff 123456789 1\n"
+                "/admin_assign_tariff 123456789 2 30\n\n"
+                "Используйте /admin_tariffs чтобы посмотреть доступные тарифы"
+            )
+            return
+
+        try:
+            target_user_id = int(context.args[0])
+            tariff_id = int(context.args[1])
+            duration_days = int(context.args[2]) if len(context.args) > 2 else None
+
+            success, message = self.manage_tariff_uc.assign_tariff_to_user(
+                target_user_id, tariff_id, duration_days
+            )
+            await update.message.reply_text(message)
+
+            # Автоматически применяем лимиты тарифа
+            if success:
+                apply_success, apply_message = self.manage_tariff_uc.apply_tariff_limits_to_user(
+                    target_user_id, self.message_limit_service, self.rate_limit_service
+                )
+                if apply_success:
+                    await update.message.reply_text(apply_message)
+
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат параметров")
+
+    async def admin_user_tariff(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать тариф пользователя"""
+        user_id = update.effective_user.id
+
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        if not context.args:
+            # Если аргументов нет, показываем свой тариф
+            target_user_id = user_id
+        else:
+            try:
+                target_user_id = int(context.args[0])
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат ID пользователя")
+                return
+
+        message = self.manage_tariff_uc.get_user_tariff_info(target_user_id)
+        await update.message.reply_text(message)
+
+    async def admin_apply_tariff_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Применить лимиты тарифа к пользователю"""
+        user_id = update.effective_user.id
+
+        if not self.manage_admin_uc.is_user_admin(user_id):
+            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            return
+
+        if not context.args:
+            await update.message.reply_text("❌ Укажите ID пользователя: /admin_apply_tariff_limits <user_id>")
+            return
+
+        try:
+            target_user_id = int(context.args[0])
+            success, message = self.manage_tariff_uc.apply_tariff_limits_to_user(
+                target_user_id, self.message_limit_service, self.rate_limit_service
+            )
+            await update.message.reply_text(message)
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID пользователя")
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         user_id = user.id
@@ -886,6 +1138,8 @@ class FriendBot:
 /profile - посмотреть и изменить профиль
 /memory - что я о тебе помню
 /reset - начать разговор заново
+/tariff - мой тарифный план и лимиты
+/limits - текущее использование лимитов
 
 Я запомню:
 • Как тебя зовут
@@ -909,8 +1163,10 @@ class FriendBot:
         self.application.add_handler(CommandHandler("memory", self.memory))
         self.application.add_handler(CommandHandler("reset", self.reset))
         self.application.add_handler(CommandHandler("limits", self.limits))
+        self.application.add_handler(CommandHandler("tariff", self.tariff))
 
         # Административные команды
+        self.application.add_handler(CommandHandler("admin_users", self.admin_users))
         self.application.add_handler(CommandHandler("admin_help", self.admin_help))
         self.application.add_handler(CommandHandler("admin_stats", self.admin_stats))
         self.application.add_handler(CommandHandler("admin_list", self.admin_list))
@@ -935,6 +1191,13 @@ class FriendBot:
         self.application.add_handler(CommandHandler("admin_set_limits", self.admin_set_limits))
         self.application.add_handler(CommandHandler("admin_reset_limits", self.admin_reset_limits))
         self.application.add_handler(CommandHandler("admin_limits_help", self.admin_limits_help))
+
+        # Команды управления тарифами
+        self.application.add_handler(CommandHandler("admin_tariffs", self.admin_tariffs))
+        self.application.add_handler(CommandHandler("admin_tariff_info", self.admin_tariff_info))
+        self.application.add_handler(CommandHandler("admin_assign_tariff", self.admin_assign_tariff))
+        self.application.add_handler(CommandHandler("admin_user_tariff", self.admin_user_tariff))
+        self.application.add_handler(CommandHandler("admin_apply_tariff_limits", self.admin_apply_tariff_limits))
 
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
