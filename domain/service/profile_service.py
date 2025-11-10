@@ -1,216 +1,159 @@
+import json
 import re
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Any
+from domain.interfaces.ai_client import AIClientInterface
+from infrastructure.monitoring.logging import StructuredLogger
 
 
 class ProfileService:
-    # Список распространенных русских имен для проверки
-    COMMON_RUSSIAN_NAMES = {
-        'анна', 'мария', 'елена', 'ольга', 'наталья', 'ирина', 'светлана', 'татьяна', 'евгения', 'юлия',
-        'александр', 'сергей', 'дмитрий', 'андрей', 'алексей', 'михаил', 'евгений', 'иван', 'максим', 'владимир',
-        'артем', 'никита', 'павел', 'роман', 'константин', 'владислав', 'кирилл', 'станислав', 'вячеслав', 'григорий',
-        'марк', 'лев', 'федор', 'георгий', 'петр', 'борис', 'геннадий', 'валерий', 'василий', 'виктор'
-    }
+    """
+    Сервис для извлечения и управления информацией профиля пользователя,
+    используя LLM для семантического анализа.
+    """
 
-    # Список стоп-слов которые не могут быть именами
-    STOP_WORDS = {
-        'пошел', 'пришел', 'ушел', 'шел', 'ехал', 'сидел', 'стоял', 'лежал', 'бежал', 'прыгал',
-        'спал', 'бодрствовал', 'работал', 'учился', 'отдыхал', 'гулял', 'смотрел', 'слушал', 'читал',
-        'писал', 'рисовал', 'играл', 'плавал', 'бегал', 'прыгал', 'танцевал', 'пел', 'говорил'
-    }
+    def __init__(self, ai_client: AIClientInterface):
+        self.ai_client = ai_client
+        self.logger = StructuredLogger("profile_service")
 
-    @staticmethod
-    def extract_profile_info(message: str) -> Tuple[Optional[str], Optional[int], Optional[str], Optional[str]]:
-        """Извлечение информации о профиле из сообщения с улучшенным парсингом"""
-        name = None
-        age = None
-        interests = None
-        mood = None
-
-        text = message.lower().strip()
-
-        # 1. Парсинг имени с улучшенными паттернами
-        name = ProfileService._extract_name_advanced(text)
-
-        # 2. Парсинг возраста
-        age = ProfileService._extract_age(text)
-
-        # 3. Парсинг интересов
-        interests = ProfileService._extract_interests(text)
-
-        # 4. Парсинг настроения
-        mood = ProfileService._extract_mood(text)
-
-        return name, age, interests, mood
-
-    @staticmethod
-    def _extract_name_advanced(text: str) -> Optional[str]:
-        """Улучшенный парсинг имени с проверкой контекста"""
-
-        # Паттерны с приоритетом (от самых надежных к менее надежным)
-        patterns = [
-            # 1. Явные указания имени (самые надежные)
-            (r'(?:меня\s+зовут|мое\s+имя|зовут\s+меня)\s+([а-яa-z]{2,20})', 1.0),
-            (r'(?:имя\s+)?([а-яa-z]{2,20})(?:\s+имя)', 0.9),
-
-            # 2. Конструкции с "я" но с проверкой контекста
-            (r'я\s+([а-яa-z]{2,20})(?:\s+(?:и мне|мне|а мне))', 0.8),
-            (r'я\s+([а-яa-z]{2,20})(?=[\.!?]|$)', 0.6),  # Только в конце предложения
-
-            # 3. Представления в диалоге
-            (r'(?:привет|здравствуй|здравствуйте)[^.!?]*([а-яa-z]{2,20})', 0.7),
-
-            # 4. Указания в кавычках или с большой буквы в оригинале
-            (r'(?:имя\s+)?["«]([а-яa-z]{2,20})["»]', 0.9),
+        # Ключевые слова, которые запускают анализ профиля
+        self.trigger_keywords = [
+            'зовут', 'имя', 'мне', 'лет', 'год', 'года',
+            'интересуюсь', 'увлекаюсь', 'нравится', 'люблю',
+            'хобби', 'настроение', 'чувствую', 'грустно',
+            'весело', 'рад', 'зол', 'устал'
         ]
 
-        best_candidate = None
-        best_score = 0
+    def _build_extraction_prompt(self, message: str) -> List[dict]:
+        """
+        Создает промпт для LLM для извлечения данных профиля в формате JSON.
+        """
 
-        for pattern, base_score in patterns:
-            matches = re.finditer(pattern, text)
-            for match in matches:
-                candidate = match.group(1).capitalize()
-                candidate_lower = candidate.lower()
+        system_prompt = """
+Ты — сверхточный и быстрый инструмент для извлечения данных (ETL).
+Твоя задача — проанализировать ОДНО сообщение от пользователя и извлечь из него сущности, связанные с его профилем.
 
-                # Проверяем кандидата
-                candidate_score = base_score
+Ты ДОЛЖЕН ответить ИСКЛЮЧИТЕЛЬНО в формате JSON.
+Если какая-то информация отсутствует, верни `null` для этого поля.
+Не добавляй никаких пояснений, только JSON.
 
-                # Повышаем score если это распространенное имя
-                if candidate_lower in ProfileService.COMMON_RUSSIAN_NAMES:
-                    candidate_score += 0.3
+Формат JSON:
+{
+  "name": "Имя пользователя (string, null если нет)",
+  "age": "Возраст пользователя (integer, null если нет)",
+  "interests": "Список интересов (list of strings, [] если нет)",
+  "mood": "Настроение пользователя (string, null если нет)"
+}
 
-                # Понижаем score если это стоп-слово
-                if candidate_lower in ProfileService.STOP_WORDS:
-                    candidate_score -= 0.5
+ПРИМЕРЫ:
+---
+Сообщение: "Меня зовут Вася, мне 25 лет."
+Ответ:
+{
+  "name": "Вася",
+  "age": 25,
+  "interests": [],
+  "mood": null
+}
+---
+Сообщение: "Я люблю программировать и гулять"
+Ответ:
+{
+  "name": null,
+  "age": null,
+  "interests": ["программирование", "прогулки"],
+  "mood": null
+}
+---
+Сообщение: "Сегодня мне что-то грустно"
+Ответ:
+{
+  "name": null,
+  "age": null,
+  "interests": [],
+  "mood": "грустное"
+}
+---
+Сообщение: "Привет, как дела?"
+Ответ:
+{
+  "name": null,
+  "age": null,
+  "interests": [],
+  "mood": null
+}
+---
+"""
 
-                # Проверяем длину имени (имена обычно 2-15 букв)
-                if len(candidate) < 2:
-                    candidate_score -= 0.3
-                elif len(candidate) > 15:
-                    candidate_score -= 0.2
-
-                # Проверяем наличие цифр (в именах цифр не бывает)
-                if any(char.isdigit() for char in candidate):
-                    candidate_score -= 0.5
-
-                # Сохраняем лучшего кандидата
-                if candidate_score > best_score and candidate_score > 0.5:
-                    best_candidate = candidate
-                    best_score = candidate_score
-
-        return best_candidate
-
-    @staticmethod
-    def _extract_age(text: str) -> Optional[int]:
-        """Извлечение возраста"""
-        # Более строгие паттерны для возраста
-        age_patterns = [
-            r'(?:мне|исполнилось|будет)\s+(\d{1,3})\s+(?:год|лет|года)',
-            r'(?:возраст|лет)\s+(\d{1,3})',
-            r'(\d{1,3})\s+(?:год|лет|года)(?:\s+мне)?',
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Сообщение: \"{message}\""}
         ]
 
-        for pattern in age_patterns:
-            match = re.search(pattern, text)
-            if match:
-                try:
-                    age = int(match.group(1))
-                    if 1 <= age <= 120:  # Реалистичный возраст
-                        return age
-                except ValueError:
-                    continue
-        return None
+    def _message_contains_triggers(self, message: str) -> bool:
+        """
+        Проверяет, содержит ли сообщение триггерные слова для
+        запуска дорогостоящего LLM-анализа.
+        """
+        text = message.lower()
+        for keyword in self.trigger_keywords:
+            if keyword in text:
+                return True
+        return False
 
-    @staticmethod
-    def _extract_interests(text: str) -> Optional[str]:
-        """Извлечение интересов с проверкой контекста"""
-        interest_indicators = [
-            ('интересуюсь', 1.0),
-            ('увлекаюсь', 1.0),
-            ('нравится', 0.8),
-            ('люблю', 0.7),
-            ('занимаюсь', 0.9),
-            ('хобби', 1.0),
-        ]
+    async def extract_profile_info_llm(self, message: str) -> Tuple[
+        Optional[str], Optional[int], Optional[str], Optional[str]]:
+        """
+        Извлечение информации о профиле из сообщения с помощью LLM.
+        Возвращает (name, age, interests_str, mood).
+        """
 
-        for indicator, confidence in interest_indicators:
-            if indicator in text:
-                # Ищем текст после индикатора до конца предложения
-                start_idx = text.find(indicator) + len(indicator)
-                sentence_end = min(
-                    text.find('.', start_idx) if '.' in text[start_idx:] else len(text),
-                    text.find('!', start_idx) if '!' in text[start_idx:] else len(text),
-                    text.find('?', start_idx) if '?' in text[start_idx:] else len(text),
-                    text.find(',', start_idx) if ',' in text[start_idx:] else len(text),
-                    text.find('\n', start_idx) if '\n' in text[start_idx:] else len(text)
-                )
+        # 1. Проверяем, нужно ли вообще запускать LLM
+        if not self._message_contains_triggers(message):
+            return None, None, None, None
 
-                if sentence_end > start_idx:
-                    interests = text[start_idx:sentence_end].strip(' ,')
-                    if interests and len(interests) > 2:  # Минимальная длина интереса
-                        return interests.capitalize()
+        # 2. Строим промпт и вызываем LLM
+        prompt = self._build_extraction_prompt(message)
 
-        return None
+        try:
+            # Используем быстрый и дешевый AI-вызов
+            response_json_str = await self.ai_client.generate_response(
+                prompt,
+                max_tokens=200,
+                temperature=0.0  # Нам нужна точность, а не креативность
+            )
 
-    @staticmethod
-    def _extract_mood(text: str) -> Optional[str]:
-        """Извлечение настроения"""
-        mood_mapping = {
-            'грустно': 'грустное',
-            'грусть': 'грустное',
-            'печально': 'грустное',
-            'весело': 'веселое',
-            'радостно': 'радостное',
-            'рад': 'радостное',
-            'счастлив': 'счастливое',
-            'одиноко': 'одинокое',
-            'скучно': 'скучное',
-            'тревожно': 'тревожное',
-            'спокойно': 'спокойное',
-            'устал': 'уставшее',
-            'устала': 'уставшее',
-            'злой': 'злое',
-            'злая': 'злое',
-            'раздражен': 'раздраженное',
-            'раздражена': 'раздраженное',
-        }
+            # 3. Парсим JSON
+            # LLM иногда заворачивает JSON в ```json ... ```
+            if "```" in response_json_str:
+                response_json_str = re.sub(r'```json\n(.*?)\n```', r'\1', response_json_str, flags=re.DOTALL)
+                response_json_str = re.sub(r'```(.*?)\n```', r'\1', response_json_str, flags=re.DOTALL)
 
-        # Ищем слова настроения в контексте
-        for mood_word, mood_value in mood_mapping.items():
-            # Проверяем что это отдельное слово или в контексте настроения
-            if (f" {mood_word} " in f" {text} " or
-                    text.startswith(mood_word + " ") or
-                    text.endswith(" " + mood_word) or
-                    f"настроение {mood_word}" in text or
-                    f"чувствую себя {mood_word}" in text):
-                return mood_value
+            data = json.loads(response_json_str.strip())
 
-        return None
+            name = data.get('name')
+            age = data.get('age')
+            interests_list = data.get('interests')
+            mood = data.get('mood')
 
-    @staticmethod
-    def validate_name_candidate(name: str) -> bool:
-        """Проверить что кандидат на имя действительно похож на имя"""
-        name_lower = name.lower()
+            # 4. Форматируем вывод
+            interests_str = ", ".join(interests_list) if interests_list else None
 
-        # Проверка стоп-слов
-        if name_lower in ProfileService.STOP_WORDS:
-            return False
+            log_data = {
+                "extracted_name": name if name else "null",
+                "extracted_age": str(age) if age is not None else "null",
+                "extracted_mood": mood if mood else "null",
+                "extracted_interests": ", ".join(interests_list) if interests_list else "null",
+            }
 
-        # Проверка длины
-        if len(name) < 2 or len(name) > 20:
-            return False
+            # Логируем успешный парсинг с безопасными строками
+            if name or age or interests_str or mood:
+                self.logger.info("LLM extracted profile data", extra=log_data)
 
-        # Проверка на цифры
-        if any(char.isdigit() for char in name):
-            return False
+            return name, age, interests_str, mood
 
-        # Проверка что первая буква заглавная (в оригинале)
-        if not name[0].isupper():
-            return False
-
-        # Проверка что это распространенное имя (не обязательная, но повышает уверенность)
-        if name_lower in ProfileService.COMMON_RUSSIAN_NAMES:
-            return True
-
-        # Если не распространенное имя, но прошло другие проверки - ок
-        return True
+        except Exception as e:
+            self.logger.error(
+                f"Failed to parse profile info from LLM response: {e}",
+                extra={"llm_response": response_json_str}
+            )
+            return None, None, None, None
