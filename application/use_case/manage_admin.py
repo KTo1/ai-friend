@@ -119,6 +119,68 @@ class ManageAdminUseCase:
             self.logger.error(f"Error getting user info for {user_id}: {e}")
             return f"❌ Ошибка при получении информации о пользователе {user_id}"
 
+    @trace_span("usecase.get_users_list", attributes={"component": "application"})
+    def get_users_list(self, page: int = 1, page_size: int = 20) -> str:
+        """Получить список пользователей с пагинацией"""
+        try:
+            all_users = self.admin_service.get_all_users()
+
+            if not all_users:
+                return "📋 Список пользователей пуст"
+
+            # Применяем пагинацию
+            total_users = len(all_users)
+            total_pages = (total_users + page_size - 1) // page_size
+            page = max(1, min(page, total_pages))
+
+            start_idx = (page - 1) * page_size
+            end_idx = start_idx + page_size
+            users_page = all_users[start_idx:end_idx]
+
+            message = f"👥 **Список пользователей** (страница {page}/{total_pages}):\n\n"
+
+            for i, user in enumerate(users_page, start_idx + 1):
+                # Основная информация
+                username = f"@{user.username}" if user.username else "без username"
+                name = user.first_name or "Без имени"
+                role = "👑" if user.is_admin else "👤"
+                status = "🚫" if user.is_blocked else "🟢"
+
+                message += f"{i}. {role} {status} {name} {username}\n"
+                message += f"   🆔 ID: {user.user_id}\n"
+
+                # Статус блокировки
+                if user.is_blocked:
+                    message += f"   ⚠️ Заблокирован\n"
+
+                # Активность
+                if user.last_seen:
+                    from datetime import datetime, timedelta
+                    days_ago = (datetime.now() - user.last_seen).days
+                    if days_ago == 0:
+                        message += f"   🕒 Был сегодня\n"
+                    elif days_ago == 1:
+                        message += f"   🕒 Был вчера\n"
+                    elif days_ago < 7:
+                        message += f"   🕒 Был {days_ago} дней назад\n"
+                    else:
+                        message += f"   🕒 Неактивен {days_ago} дней\n"
+
+                message += "\n"
+
+            # Статистика в конце
+            admin_count = len([u for u in all_users if u.is_admin])
+            blocked_count = len([u for u in all_users if u.is_blocked])
+
+            message += f"📊 **Статистика:** Всего: {total_users} | Админы: {admin_count} | Заблокированы: {blocked_count}\n"
+            message += f"💡 Используйте `/admin_users <страница>` для навигации"
+
+            return message
+
+        except Exception as e:
+            self.logger.error(f"Error getting users list: {e}")
+            return "❌ Ошибка при получении списка пользователей"
+
     def _format_datetime(self, dt_value) -> str:
         """Безопасное форматирование datetime"""
         try:
