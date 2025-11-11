@@ -9,6 +9,30 @@ class DatabaseConfig:
     def name(self):
         return os.getenv("DB_NAME", "friend_bot.db")
 
+    @property
+    def host(self):
+        return os.getenv("DB_HOST", "localhost")
+
+    @property
+    def port(self):
+        return int(os.getenv("DB_PORT", "15432"))
+
+    @property
+    def name(self):
+        return os.getenv("DB_NAME", "ai-friend")
+
+    @property
+    def user(self):
+        return os.getenv("DB_USER", "postgres")
+
+    @property
+    def password(self):
+        return os.getenv("DB_PASSWORD", "")
+
+    @property
+    def url(self):
+        return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+
 
 @dataclass
 class OpenAIConfig:

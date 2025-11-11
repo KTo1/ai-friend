@@ -1,4 +1,4 @@
-import sqlite3
+import json
 from typing import Optional
 from datetime import datetime
 from domain.entity.proactive_message import UserActivity
@@ -12,29 +12,22 @@ class ProactiveRepository:
 
     def _init_table(self):
         """Инициализация таблицы активности пользователей"""
-        try:
-            self.db.execute_query('''
-                CREATE TABLE IF NOT EXISTS user_activity (
-                    user_id INTEGER PRIMARY KEY,
-                    last_message_time TIMESTAMP,
-                    last_proactive_time TIMESTAMP,
-                    message_count INTEGER DEFAULT 0,
-                    timezone_offset INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            print("Proactive repository table initialized")
-        except Exception as e:
-            print(f"Error initializing proactive table: {e}")
+        # Таблица уже создана в PostgreSQL инициализации
+        pass
 
     def save_activity(self, activity: UserActivity):
         """Сохранить активность пользователя"""
         try:
             self.db.execute_query('''
-                INSERT OR REPLACE INTO user_activity 
+                INSERT INTO user_activity 
                 (user_id, last_message_time, last_proactive_time, message_count, timezone_offset, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    last_message_time = EXCLUDED.last_message_time,
+                    last_proactive_time = EXCLUDED.last_proactive_time,
+                    message_count = EXCLUDED.message_count,
+                    timezone_offset = EXCLUDED.timezone_offset,
+                    updated_at = EXCLUDED.updated_at
             ''', (
                 activity.user_id,
                 activity.last_message_time,
@@ -50,17 +43,17 @@ class ProactiveRepository:
         """Получить активность пользователя"""
         try:
             result = self.db.fetch_one(
-                'SELECT last_message_time, last_proactive_time, message_count, timezone_offset FROM user_activity WHERE user_id = ?',
+                'SELECT last_message_time, last_proactive_time, message_count, timezone_offset FROM user_activity WHERE user_id = %s',
                 (user_id,)
             )
 
             if result:
                 return UserActivity(
                     user_id=user_id,
-                    last_message_time=datetime.fromisoformat(result[0]) if result[0] else datetime.now(),
-                    last_proactive_time=datetime.fromisoformat(result[1]) if result[1] else None,
-                    message_count=result[2] or 0,
-                    timezone_offset=result[3] or 0
+                    last_message_time=result["last_message_time"],
+                    last_proactive_time=result["last_proactive_time"],
+                    message_count=result["message_count"] or 0,
+                    timezone_offset=result["timezone_offset"] or 0
                 )
             return None
         except Exception as e:

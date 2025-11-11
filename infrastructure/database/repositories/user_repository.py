@@ -10,30 +10,26 @@ class UserRepository:
         self._init_table()
 
     def _init_table(self):
-        """Инициализация таблицы пользователей с полями блокировки"""
-        self.db.execute_query('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                first_name TEXT,
-                last_name TEXT,
-                is_admin BOOLEAN DEFAULT FALSE,
-                is_blocked BOOLEAN DEFAULT FALSE,
-                blocked_reason TEXT,
-                blocked_at TIMESTAMP,
-                blocked_by INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        """Инициализация таблицы пользователей (уже выполнена в PostgreSQL)"""
+        pass
 
     def save_user(self, user: User):
         """Сохранить пользователя"""
         self.db.execute_query('''
-            INSERT OR REPLACE INTO users 
+            INSERT INTO users 
             (user_id, username, first_name, last_name, is_admin, is_blocked, 
              blocked_reason, blocked_at, blocked_by, last_seen)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (user_id) DO UPDATE SET
+                username = EXCLUDED.username,
+                first_name = EXCLUDED.first_name,
+                last_name = EXCLUDED.last_name,
+                is_admin = EXCLUDED.is_admin,
+                is_blocked = EXCLUDED.is_blocked,
+                blocked_reason = EXCLUDED.blocked_reason,
+                blocked_at = EXCLUDED.blocked_at,
+                blocked_by = EXCLUDED.blocked_by,
+                last_seen = EXCLUDED.last_seen
         ''', (
             user.user_id,
             user.username,
@@ -53,23 +49,23 @@ class UserRepository:
             '''SELECT user_id, username, first_name, last_name, is_admin, 
                       is_blocked, blocked_reason, blocked_at, blocked_by, 
                       created_at, last_seen 
-               FROM users WHERE user_id = ?''',
+               FROM users WHERE user_id = %s''',
             (user_id,)
         )
 
         if result:
             return User(
-                user_id=result[0],
-                username=result[1],
-                first_name=result[2],
-                last_name=result[3],
-                is_admin=bool(result[4]),
-                is_blocked=bool(result[5]),
-                blocked_reason=result[6],
-                blocked_at=self._parse_datetime(result[7]),
-                blocked_by=result[8],
-                created_at=self._parse_datetime(result[9]),
-                last_seen=self._parse_datetime(result[10])
+                user_id=result['user_id'],
+                username=result['username'],
+                first_name=result['first_name'],
+                last_name=result['last_name'],
+                is_admin=bool(result['is_admin']),
+                is_blocked=bool(result['is_blocked']),
+                blocked_reason=result['blocked_reason'],
+                blocked_at=self._parse_datetime(result['blocked_at']),
+                blocked_by=result['blocked_by'],
+                created_at=self._parse_datetime(result['created_at']),
+                last_seen=self._parse_datetime(result['last_seen'])
             )
         return None
 
@@ -85,17 +81,17 @@ class UserRepository:
         users = []
         for result in results:
             users.append(User(
-                user_id=result[0],
-                username=result[1],
-                first_name=result[2],
-                last_name=result[3],
-                is_admin=bool(result[4]),
-                is_blocked=bool(result[5]),
-                blocked_reason=result[6],
-                blocked_at=self._parse_datetime(result[7]),
-                blocked_by=result[8],
-                created_at=self._parse_datetime(result[9]),
-                last_seen=self._parse_datetime(result[10])
+                user_id=result['user_id'],
+                username=result['username'],
+                first_name=result['first_name'],
+                last_name=result['last_name'],
+                is_admin=bool(result['is_admin']),
+                is_blocked=bool(result['is_blocked']),
+                blocked_reason=result['blocked_reason'],
+                blocked_at=self._parse_datetime(result['blocked_at']),
+                blocked_by=result['blocked_by'],
+                created_at=self._parse_datetime(result['created_at']),
+                last_seen=self._parse_datetime(result['last_seen'])
             ))
 
         return users
@@ -112,17 +108,17 @@ class UserRepository:
         admins = []
         for result in results:
             admins.append(User(
-                user_id=result[0],
-                username=result[1],
-                first_name=result[2],
-                last_name=result[3],
-                is_admin=bool(result[4]),
-                is_blocked=bool(result[5]),
-                blocked_reason=result[6],
-                blocked_at=self._parse_datetime(result[7]),
-                blocked_by=result[8],
-                created_at=self._parse_datetime(result[9]),
-                last_seen=self._parse_datetime(result[10])
+                user_id=result['user_id'],
+                username=result['username'],
+                first_name=result['first_name'],
+                last_name=result['last_name'],
+                is_admin=bool(result['is_admin']),
+                is_blocked=bool(result['is_blocked']),
+                blocked_reason=result['blocked_reason'],
+                blocked_at=self._parse_datetime(result['blocked_at']),
+                blocked_by=result['blocked_by'],
+                created_at=self._parse_datetime(result['created_at']),
+                last_seen=self._parse_datetime(result['last_seen'])
             ))
 
         return admins
@@ -139,17 +135,17 @@ class UserRepository:
         blocked_users = []
         for result in results:
             blocked_users.append(User(
-                user_id=result[0],
-                username=result[1],
-                first_name=result[2],
-                last_name=result[3],
-                is_admin=bool(result[4]),
-                is_blocked=bool(result[5]),
-                blocked_reason=result[6],
-                blocked_at=self._parse_datetime(result[7]),
-                blocked_by=result[8],
-                created_at=self._parse_datetime(result[9]),
-                last_seen=self._parse_datetime(result[10])
+                user_id=result['user_id'],
+                username=result['username'],
+                first_name=result['first_name'],
+                last_name=result['last_name'],
+                is_admin=bool(result['is_admin']),
+                is_blocked=bool(result['is_blocked']),
+                blocked_reason=result['blocked_reason'],
+                blocked_at=self._parse_datetime(result['blocked_at']),
+                blocked_by=result['blocked_by'],
+                created_at=self._parse_datetime(result['created_at']),
+                last_seen=self._parse_datetime(result['last_seen'])
             ))
 
         return blocked_users
@@ -157,13 +153,13 @@ class UserRepository:
     def update_last_seen(self, user_id: int):
         """Обновить время последней активности пользователя"""
         self.db.execute_query(
-            'UPDATE users SET last_seen = ? WHERE user_id = ?',
+            'UPDATE users SET last_seen = %s WHERE user_id = %s',
             (datetime.now(), user_id)
         )
 
     def delete_user(self, user_id: int):
         """Удалить пользователя"""
-        self.db.execute_query('DELETE FROM users WHERE user_id = ?', (user_id,))
+        self.db.execute_query('DELETE FROM users WHERE user_id = %s', (user_id,))
 
     def _parse_datetime(self, dt_value) -> datetime:
         """Парсинг datetime из различных форматов"""
@@ -175,19 +171,9 @@ class UserRepository:
 
         if isinstance(dt_value, str):
             try:
-                # Пробуем разные форматы дат
-                for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f',
-                            '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f',
-                            '%Y-%m-%d %H:%M:%S.%f%z', '%Y-%m-%dT%H:%M:%S.%f%z']:
-                    try:
-                        return datetime.strptime(dt_value, fmt)
-                    except ValueError:
-                        continue
-
-                # Если ни один формат не подошел, возвращаем текущее время
-                return datetime.now()
+                # PostgreSQL возвращает datetime в формате ISO
+                return datetime.fromisoformat(dt_value.replace('Z', '+00:00'))
             except Exception:
                 return datetime.now()
 
-        # Если непонятный тип, возвращаем текущее время
         return datetime.now()

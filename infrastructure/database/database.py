@@ -1,79 +1,29 @@
-import sqlite3
-import logging
-from typing import List, Dict, Optional
-
-logger = logging.getLogger(__name__)
+import os
+from config.settings import config
+from infrastructure.database.postgresql import PostgreSQLDatabase
 
 
 class Database:
-    def __init__(self, db_name: str = "friend_bot.db"):
-        self.db_name = db_name
-        self.init_db()
+    def __init__(self):
+        self.db = PostgreSQLDatabase(config.database)
+        self.logger = self.db.logger
+
+    def __getattr__(self, name):
+        """Делегируем методы PostgreSQLDatabase"""
+        return getattr(self.db, name)
 
     def init_db(self):
-        """Инициализация базы данных"""
-        with sqlite3.connect(self.db_name) as conn:
-            cursor = conn.cursor()
-
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS users (
-                    user_id INTEGER PRIMARY KEY,
-                    username TEXT,
-                    first_name TEXT,
-                    last_name TEXT,
-                    is_admin BOOLEAN DEFAULT FALSE,
-                    is_blocked BOOLEAN DEFAULT FALSE,
-                    blocked_reason TEXT,
-                    blocked_at TIMESTAMP,
-                    blocked_by INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_profiles (
-                    user_id INTEGER PRIMARY KEY,
-                    name TEXT,
-                    age INTEGER,
-                    interests TEXT,
-                    mood TEXT,
-                    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users (user_id)
-                )
-            ''')
-
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS conversation_context (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER,
-                    role TEXT,
-                    content TEXT,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users (user_id)
-                )
-            ''')
-
-            conn.commit()
+        """Инициализация базы данных (для обратной совместимости)"""
+        return self.db.init_db()
 
     def execute_query(self, query: str, params: tuple = ()):
         """Выполнить запрос к базе данных"""
-        try:
-            with sqlite3.connect(self.db_name) as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, params)
-                conn.commit()
-                return cursor
-        except Exception as e:
-            logger.error(f"Database error: {e}")
-            raise
+        return self.db.execute_query(query, params)
 
     def fetch_one(self, query: str, params: tuple = ()):
         """Получить одну запись"""
-        cursor = self.execute_query(query, params)
-        return cursor.fetchone()
+        return self.db.fetch_one(query, params)
 
     def fetch_all(self, query: str, params: tuple = ()):
         """Получить все записи"""
-        cursor = self.execute_query(query, params)
-        return cursor.fetchall()
+        return self.db.fetch_all(query, params)

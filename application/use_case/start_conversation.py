@@ -1,3 +1,4 @@
+from domain.entity.profile import UserProfile
 from domain.entity.user import User
 from infrastructure.database.repositories.user_repository import UserRepository
 from infrastructure.database.repositories.profile_repository import ProfileRepository
@@ -21,7 +22,12 @@ class StartConversationUseCase:
         )
         self.user_repo.save_user(user)
 
+        # СОЗДАЕМ ПУСТОЙ ПРОФИЛЬ, ЕСЛИ ЕГО НЕТ
         profile = self.profile_repo.get_profile(user_id)
+        if not profile:
+            profile = UserProfile(user_id=user_id)
+            self.profile_repo.save_profile(profile)
+            self.logger.info(f"Created empty profile for new user {user_id}")
 
         if profile and profile.name:
             return f"🤗 Привет, {profile.name}! Рада снова тебя видеть!\n\nПомню, ты интересовался: {profile.interests or 'разными вещами'}\nКак у тебя дела сегодня? Что нового?"
