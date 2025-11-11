@@ -21,9 +21,13 @@ class Database:
                     username TEXT,
                     first_name TEXT,
                     last_name TEXT,
+                    is_admin BOOLEAN DEFAULT FALSE,
+                    is_blocked BOOLEAN DEFAULT FALSE,
+                    blocked_reason TEXT,
+                    blocked_at TIMESTAMP,
+                    blocked_by INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    is_active BOOLEAN DEFAULT TRUE,
-                    is_banned BOOLEAN DEFAULT FALSE
+                    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
 
@@ -47,44 +51,6 @@ class Database:
                     content TEXT,
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users (user_id)
-                )
-            ''')
-
-            # 🆕 ТАБЛИЦА ЛИМИТОВ ПОЛЬЗОВАТЕЛЕЙ
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_limits (
-                    user_id INTEGER PRIMARY KEY,
-                    max_daily_requests INTEGER,                    
-                    max_message_length INTEGER,                      
-                    max_context_messages INTEGER,                  
-                    max_tokens_per_request INTEGER,                
-                    custom_limits_enabled BOOLEAN DEFAULT FALSE,
-                    messages_per_minute INTEGER,                   
-                    messages_per_hour INTEGER,                     
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users (user_id)
-                )
-            ''')
-
-            # 🆕 ТАБЛИЦА СТАТИСТИКИ ИСПОЛЬЗОВАНИЯ
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_usage_stats (
-                    user_id INTEGER,
-                    date DATE DEFAULT CURRENT_DATE,
-                    requests_count INTEGER DEFAULT 0,
-                    total_tokens_used INTEGER DEFAULT 0,
-                    total_cost_estimated REAL DEFAULT 0.0,
-                    PRIMARY KEY (user_id, date),
-                    FOREIGN KEY (user_id) REFERENCES users (user_id)
-                )
-            ''')
-
-            # 🆕 ТАБЛИЦА АДМИНИСТРАТОРОВ
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS admins (
-                    user_id INTEGER PRIMARY KEY,
-                    permissions_level INTEGER DEFAULT 1,  -- 1=moderator, 2=admin, 3=superadmin
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
 

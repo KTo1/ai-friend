@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from domain.entity.proactive_message import UserActivity, ProactiveTrigger
 from domain.entity.profile import UserProfile
+from domain.service.message_limit_service import MessageLimitService
 from domain.service.proactive_generator import ProactiveMessageGenerator
 from infrastructure.database.repositories.proactive_repository import ProactiveRepository
 from infrastructure.database.repositories.profile_repository import ProfileRepository
@@ -15,6 +16,7 @@ class ProactiveMessageManager:
                  proactive_repo: ProactiveRepository,
                  profile_repo: ProfileRepository,
                  conversation_repo: ConversationRepository,
+                 message_limit_service: MessageLimitService,
                  ai_client,
                  telegram_bot_instance,
                  check_interval: int = 300):  # Проверка каждые 5 минут
@@ -26,6 +28,7 @@ class ProactiveMessageManager:
         self.bot = telegram_bot_instance
         self.logger = StructuredLogger("proactive_manager")
         self.check_interval = check_interval
+        self.message_limit_service = message_limit_service
 
         # Хранилище активности пользователей
         self.user_activities: Dict[int, UserActivity] = {}
@@ -105,9 +108,11 @@ class ProactiveMessageManager:
     async def _send_proactive_message(self, user_id: int, activity: UserActivity, trigger: ProactiveTrigger):
         """Отправить проактивное сообщение в Telegram"""
         try:
+            message_limits = self.message_limit_service.get_user_limits(user_id)
+
             # Получаем профиль и контекст
             profile = self.profile_repo.get_profile(user_id)
-            conversation_context = self.conversation_repo.get_conversation_context(user_id, limit=10)
+            conversation_context = self.conversation_repo.get_conversation_context(user_id, message_limits.config.max_context_messages)
 
             # Генерируем сообщение
             message = await self.generator.generate_proactive_message(

@@ -94,6 +94,10 @@ class Config:
     def bot(self):
         return self._bot
 
+    @property
+    def rate_limit(self):
+        return RateLimitConfig()
+
 
 @dataclass
 class DeepSeekConfig:
@@ -108,6 +112,54 @@ class DeepSeekConfig:
     @property
     def base_url(self):
         return os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+
+
+@dataclass
+class RateLimitConfig:
+    @property
+    def messages_per_minute(self):
+        return int(os.getenv("RATE_LIMIT_PER_MINUTE", "2"))
+
+    @property
+    def messages_per_hour(self):
+        return int(os.getenv("RATE_LIMIT_PER_HOUR", "15"))
+
+    @property
+    def messages_per_day(self):
+        return int(os.getenv("RATE_LIMIT_PER_DAY", "30"))
+
+    @property
+    def message_limits(self):
+        return MessageLimitConfig()
+
+
+@dataclass
+class AdminConfig:
+    @property
+    def default_admin_ids(self):
+        import os
+        admin_ids_str = os.getenv("DEFAULT_ADMIN_IDS", "")
+        if admin_ids_str:
+            try:
+                return [int(id_str.strip()) for id_str in admin_ids_str.split(",")]
+            except ValueError:
+                return []
+        return []
+
+
+@dataclass
+class MessageLimitConfig:
+    @property
+    def default_max_message_length(self):
+        return int(os.getenv("DEFAULT_MAX_MESSAGE_LENGTH", "2000"))
+
+    @property
+    def default_max_context_messages(self):
+        return int(os.getenv("DEFAULT_MAX_CONTEXT_MESSAGES", "10"))
+
+    @property
+    def default_max_context_length(self):
+        return int(os.getenv("DEFAULT_MAX_CONTEXT_LENGTH", "4000"))
 
 
 config = Config()

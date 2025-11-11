@@ -1,23 +1,6 @@
-# domain/entity/user.py
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Dict, Any
-
-
-@dataclass
-class UserLimits:
-    """Лимиты пользователя"""
-    max_daily_requests: int = 150
-    max_message_length: int = 100
-    max_context_messages: int = 3
-    max_tokens_per_request: int = 1000
-    custom_limits_enabled: bool = False
-
-    # RATE LIMITS
-    messages_per_minute: int = 3
-    messages_per_hour: int = 60
-
-    updated_at: datetime = None
+from typing import Optional
 
 
 @dataclass
@@ -26,23 +9,42 @@ class User:
     username: Optional[str]
     first_name: Optional[str]
     last_name: Optional[str]
+    is_admin: bool = False
+    is_blocked: bool = False
+    blocked_reason: Optional[str] = None
+    blocked_at: Optional[datetime] = None
+    blocked_by: Optional[int] = None
     created_at: datetime = None
-    is_active: bool = True
-    is_banned: bool = False
-    limits: UserLimits = None
+    last_seen: datetime = None
 
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = datetime.now()
-        if self.limits is None:
-            self.limits = UserLimits()
+        if self.last_seen is None:
+            self.last_seen = datetime.now()
 
-    def can_make_request(self, current_usage: int) -> bool:
-        """Может ли пользователь сделать запрос"""
-        if self.is_banned or not self.is_active:
-            return False
-        return current_usage < self.limits.max_daily_requests
+    def update_last_seen(self):
+        """Обновить время последней активности"""
+        self.last_seen = datetime.now()
 
-    def get_remaining_requests(self, current_usage: int) -> int:
-        """Оставшееся количество запросов"""
-        return max(0, self.limits.max_daily_requests - current_usage)
+    def promote_to_admin(self):
+        """Назначить пользователя администратором"""
+        self.is_admin = True
+
+    def demote_from_admin(self):
+        """Убрать права администратора"""
+        self.is_admin = False
+
+    def block_user(self, blocked_by: int, reason: Optional[str] = None):
+        """Заблокировать пользователя"""
+        self.is_blocked = True
+        self.blocked_reason = reason
+        self.blocked_at = datetime.now()
+        self.blocked_by = blocked_by
+
+    def unblock_user(self):
+        """Разблокировать пользователя"""
+        self.is_blocked = False
+        self.blocked_reason = None
+        self.blocked_at = None
+        self.blocked_by = None

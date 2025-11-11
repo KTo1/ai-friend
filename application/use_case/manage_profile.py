@@ -3,12 +3,15 @@ from domain.service.profile_service import ProfileService
 from infrastructure.database.repositories.profile_repository import ProfileRepository
 from infrastructure.monitoring.tracing import trace_span
 from infrastructure.monitoring.logging import StructuredLogger
+from domain.interfaces.ai_client import AIClientInterface  # <--- 1. Импортируем AIClient
+from typing import Tuple
 
 
 class ManageProfileUseCase:
-    def __init__(self, profile_repository: ProfileRepository):
+    def __init__(self, profile_repository: ProfileRepository,
+                 ai_client: AIClientInterface):
         self.profile_repo = profile_repository
-        self.profile_service = ProfileService()
+        self.profile_service = ProfileService(ai_client)
         self.logger = StructuredLogger("manage_profile_uc")
 
     @trace_span("usecase.get_profile", attributes={"component": "application"})
@@ -31,16 +34,28 @@ class ManageProfileUseCase:
             return "У тебя еще нет профиля. Давай создадим его! Как тебя зовут?"
 
     @trace_span("usecase.extract_profile", attributes={"component": "application"})
-    def extract_and_update_profile(self, user_id: int, message: str) -> tuple:
-        name, age, interests, mood = self.profile_service.extract_profile_info(message)
+    async def extract_and_update_profile(self, user_id: int, message: str) -> tuple:
 
+        # 5. Вызываем новый async метод LLM
+        name, age, interests, mood = await self.profile_service.extract_profile_info_llm(message)
+
+        # Если LLM ничего не вернул (не было триггеров или данных), выходим
+        if not any([name, age, interests, mood]):
+            return None, None, None, None
+
+        # 6. Обновляем профиль в базе
         profile = self.profile_repo.get_profile(user_id)
         if not profile:
             profile = UserProfile(user_id=user_id)
 
+        # Сервис `update_profile` в entity обновляет только то, что не None
         profile.update_profile(name, age, interests, mood)
         self.profile_repo.save_profile(profile)
 
+        self.logger.info(
+            f"Profile updated for user {user_id}",
+            extra={'user_id': user_id, 'extracted_name': name, 'extracted_age': age, 'extracted_interests': interests, 'extracted_mood': mood}
+        )
         return name, age, interests, mood
 
     @trace_span("usecase.get_memory", attributes={"component": "application"})

@@ -1,100 +1,124 @@
-# infrastructure/database/repositories/rate_limit_repository.py
-import threading
-from datetime import datetime, timedelta
-from domain.entity.rate_limit_state import RateLimitState
-from domain.entity.user import UserLimits
+import json
+from typing import Optional
+from datetime import datetime
+from domain.entity.rate_limit import UserRateLimit, RateLimitConfig
+from infrastructure.database.database import Database
 
 
 class RateLimitRepository:
-    def __init__(self, database):
+    """Репозиторий для хранения лимитов пользователей"""
+
+    def __init__(self, database: Database):
         self.db = database
-        self._lock = threading.Lock()  # 🔒 Защита от race conditions
         self._init_table()
 
     def _init_table(self):
+        """Инициализация таблицы лимитов"""
         self.db.execute_query('''
-            CREATE TABLE IF NOT EXISTS rate_limit_state (
+            CREATE TABLE IF NOT EXISTS user_rate_limits (
                 user_id INTEGER PRIMARY KEY,
-                minute_window_start TIMESTAMP,
-                minute_count INTEGER DEFAULT 0,
-                hour_window_start TIMESTAMP,
-                hour_count INTEGER DEFAULT 0,
-                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                message_counts TEXT NOT NULL,
+                last_reset TEXT NOT NULL,
+                config TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
 
-    def check_and_increment(self, user_id: int, limits: UserLimits) -> dict:
-        """Атомарная проверка и инкремент rate limits"""
-        with self._lock:  # 🔒 Гарантируем атомарность
-            now = datetime.now()
-            state = self._get_or_create_state(user_id, now)
-
-            # Проверяем и сбрасываем минутное окно
-            if now - state.minute_window_start > timedelta(minutes=1):
-                state.minute_count = 0
-                state.minute_window_start = now
-
-            # Проверяем и сбрасываем часовое окно
-            if now - state.hour_window_start > timedelta(hours=1):
-                state.hour_count = 0
-                state.hour_window_start = now
-
-            # Проверяем лимиты
-            minute_allowed = state.minute_count < limits.messages_per_minute
-            hour_allowed = state.hour_count < limits.messages_per_hour
-            allowed = minute_allowed and hour_allowed
-
-            # Инкрементируем если разрешено
-            if allowed:
-                state.minute_count += 1
-                state.hour_count += 1
-                state.last_updated = now
-                self._save_state(state)
-
-            return {
-                "allowed": allowed,
-                "minute_remaining": max(0, limits.messages_per_minute - state.minute_count),
-                "hour_remaining": max(0, limits.messages_per_hour - state.hour_count),
-                "minute_count": state.minute_count,
-                "hour_count": state.hour_count
+    def save_rate_limit(self, rate_limit: UserRateLimit):
+        """Сохранить лимиты пользователя"""
+        data = {
+            'message_counts': rate_limit.message_counts,
+            'last_reset': {
+                'minute': rate_limit.last_reset['minute'].isoformat(),
+                'hour': rate_limit.last_reset['hour'].isoformat(),
+                'hour_start': rate_limit.last_reset['hour_start'].isoformat(),
+                'day': rate_limit.last_reset['day'].isoformat(),
+                'day_start': rate_limit.last_reset['day_start'].isoformat()
+            },
+            'config': {
+                'messages_per_minute': rate_limit.config.messages_per_minute,
+                'messages_per_hour': rate_limit.config.messages_per_hour,
+                'messages_per_day': rate_limit.config.messages_per_day
             }
+        }
 
-    def _get_or_create_state(self, user_id: int, now: datetime) -> RateLimitState:
+        self.db.execute_query('''
+            INSERT OR REPLACE INTO user_rate_limits 
+            (user_id, message_counts, last_reset, config, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (
+            rate_limit.user_id,
+            json.dumps(data['message_counts']),
+            json.dumps(data['last_reset']),
+            json.dumps(data['config']),
+            datetime.utcnow()
+        ))
+
+    def get_rate_limit(self, user_id: int, default_config: RateLimitConfig) -> Optional[UserRateLimit]:
+        """Получить лимиты пользователя"""
         result = self.db.fetch_one(
-            'SELECT minute_window_start, minute_count, hour_window_start, hour_count, last_updated '
-            'FROM rate_limit_state WHERE user_id = ?',
+            'SELECT message_counts, last_reset, config FROM user_rate_limits WHERE user_id = ?',
             (user_id,)
         )
 
         if result:
-            return RateLimitState(
-                user_id=user_id,
-                minute_window_start=datetime.fromisoformat(result[0]),
-                minute_count=result[1],
-                hour_window_start=datetime.fromisoformat(result[2]),
-                hour_count=result[3],
-                last_updated=datetime.fromisoformat(result[4])
-            )
-        else:
-            # Создаем новое состояние
-            new_state = RateLimitState(
-                user_id=user_id,
-                minute_window_start=now,
-                hour_window_start=now
-            )
-            self._save_state(new_state)
-            return new_state
+            try:
+                message_counts = json.loads(result[0])
+                last_reset_data = json.loads(result[1])
+                config_data = json.loads(result[2])
 
-    def _save_state(self, state: RateLimitState):
-        self.db.execute_query('''
-            INSERT OR REPLACE INTO rate_limit_state 
-            (user_id, minute_window_start, minute_count, hour_window_start, hour_count, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (
-            state.user_id,
-            state.minute_window_start.isoformat(),
-            state.minute_count,
-            state.hour_window_start.isoformat(),
-            state.hour_count,
-            state.last_updated.isoformat()
-        ))
+                # Создаем конфиг из сохраненных данных или используем дефолтный
+                config = RateLimitConfig(
+                    messages_per_minute=config_data.get('messages_per_minute', default_config.messages_per_minute),
+                    messages_per_hour=config_data.get('messages_per_hour', default_config.messages_per_hour),
+                    messages_per_day=config_data.get('messages_per_day', default_config.messages_per_day)
+                )
+
+                rate_limit = UserRateLimit(user_id, config)
+                rate_limit.message_counts = message_counts
+
+                # Восстанавливаем даты с безопасным парсингом
+                for key in ['minute', 'hour', 'hour_start', 'day', 'day_start']:
+                    if key in last_reset_data:
+                        rate_limit.last_reset[key] = self._parse_datetime(last_reset_data[key])
+
+                return rate_limit
+
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                print(f"Error loading rate limit for user {user_id}: {e}")
+
+        return None
+
+    def delete_rate_limit(self, user_id: int):
+        """Удалить лимиты пользователя"""
+        self.db.execute_query(
+            'DELETE FROM user_rate_limits WHERE user_id = ?',
+            (user_id,)
+        )
+
+    def _parse_datetime(self, dt_value) -> datetime:
+        """Парсинг datetime из различных форматов"""
+        if dt_value is None:
+            return datetime.utcnow()
+
+        if isinstance(dt_value, datetime):
+            return dt_value
+
+        if isinstance(dt_value, str):
+            try:
+                # Пробуем разные форматы дат
+                for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f',
+                            '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f',
+                            '%Y-%m-%d %H:%M:%S.%f%z', '%Y-%m-%dT%H:%M:%S.%f%z']:
+                    try:
+                        return datetime.strptime(dt_value, fmt)
+                    except ValueError:
+                        continue
+
+                # Если ни один формат не подошел, возвращаем текущее время
+                return datetime.utcnow()
+            except Exception:
+                return datetime.utcnow()
+
+        # Если непонятный тип, возвращаем текущее время
+        return datetime.utcnow()
