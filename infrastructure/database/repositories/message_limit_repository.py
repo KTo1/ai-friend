@@ -13,17 +13,8 @@ class MessageLimitRepository:
 
     def _init_table(self):
         """Инициализация таблицы лимитов сообщений"""
-        self.db.execute_query('''
-            CREATE TABLE IF NOT EXISTS user_message_limits (
-                user_id INTEGER PRIMARY KEY,
-                config TEXT NOT NULL,
-                total_messages_processed INTEGER DEFAULT 0,
-                total_characters_processed INTEGER DEFAULT 0,
-                average_message_length REAL DEFAULT 0.0,
-                rejected_messages_count INTEGER DEFAULT 0,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        # Таблица уже создана в PostgreSQL инициализации
+        pass
 
     def save_user_limit(self, user_limit: UserMessageLimit):
         """Сохранить лимиты пользователя"""
@@ -34,10 +25,17 @@ class MessageLimitRepository:
         }
 
         self.db.execute_query('''
-            INSERT OR REPLACE INTO user_message_limits 
+            INSERT INTO user_message_limits 
             (user_id, config, total_messages_processed, total_characters_processed, 
              average_message_length, rejected_messages_count, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (user_id) DO UPDATE SET
+                config = EXCLUDED.config,
+                total_messages_processed = EXCLUDED.total_messages_processed,
+                total_characters_processed = EXCLUDED.total_characters_processed,
+                average_message_length = EXCLUDED.average_message_length,
+                rejected_messages_count = EXCLUDED.rejected_messages_count,
+                updated_at = EXCLUDED.updated_at
         ''', (
             user_limit.user_id,
             json.dumps(config_data),
@@ -52,13 +50,18 @@ class MessageLimitRepository:
         result = self.db.fetch_one(
             '''SELECT config, total_messages_processed, total_characters_processed, 
                       average_message_length, rejected_messages_count 
-               FROM user_message_limits WHERE user_id = ?''',
+               FROM user_message_limits WHERE user_id = %s''',
             (user_id,)
         )
 
         if result:
             try:
-                config_data = json.loads(result[0])
+                # В PostgreSQL с JSONB config уже является словарем Python
+                config_data = result["config"]
+
+                # Если данные пришли как строка (старая версия), парсим JSON
+                if isinstance(config_data, str):
+                    config_data = json.loads(config_data)
 
                 # Создаем конфиг из сохраненных данных
                 config = MessageLimitConfig(
@@ -70,10 +73,10 @@ class MessageLimitRepository:
                 user_limit = UserMessageLimit(
                     user_id=user_id,
                     config=config,
-                    total_messages_processed=result[1] or 0,
-                    total_characters_processed=result[2] or 0,
-                    average_message_length=result[3] or 0.0,
-                    rejected_messages_count=result[4] or 0
+                    total_messages_processed=result["total_messages_processed"] or 0,
+                    total_characters_processed=result["total_characters_processed"] or 0,
+                    average_message_length=result["average_message_length"] or 0.0,
+                    rejected_messages_count=result["rejected_messages_count"] or 0
                 )
 
                 return user_limit
@@ -86,6 +89,6 @@ class MessageLimitRepository:
     def delete_user_limit(self, user_id: int):
         """Удалить лимиты пользователя"""
         self.db.execute_query(
-            'DELETE FROM user_message_limits WHERE user_id = ?',
+            'DELETE FROM user_message_limits WHERE user_id = %s',
             (user_id,)
         )

@@ -14,15 +14,8 @@ class RateLimitRepository:
 
     def _init_table(self):
         """Инициализация таблицы лимитов"""
-        self.db.execute_query('''
-            CREATE TABLE IF NOT EXISTS user_rate_limits (
-                user_id INTEGER PRIMARY KEY,
-                message_counts TEXT NOT NULL,
-                last_reset TEXT NOT NULL,
-                config TEXT NOT NULL,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        # Таблица уже создана в PostgreSQL инициализации
+        pass
 
     def save_rate_limit(self, rate_limit: UserRateLimit):
         """Сохранить лимиты пользователя"""
@@ -43,9 +36,14 @@ class RateLimitRepository:
         }
 
         self.db.execute_query('''
-            INSERT OR REPLACE INTO user_rate_limits 
+            INSERT INTO user_rate_limits 
             (user_id, message_counts, last_reset, config, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (user_id) DO UPDATE SET
+                message_counts = EXCLUDED.message_counts,
+                last_reset = EXCLUDED.last_reset,
+                config = EXCLUDED.config,
+                updated_at = EXCLUDED.updated_at
         ''', (
             rate_limit.user_id,
             json.dumps(data['message_counts']),
@@ -57,15 +55,24 @@ class RateLimitRepository:
     def get_rate_limit(self, user_id: int, default_config: RateLimitConfig) -> Optional[UserRateLimit]:
         """Получить лимиты пользователя"""
         result = self.db.fetch_one(
-            'SELECT message_counts, last_reset, config FROM user_rate_limits WHERE user_id = ?',
+            'SELECT message_counts, last_reset, config FROM user_rate_limits WHERE user_id = %s',
             (user_id,)
         )
 
         if result:
             try:
-                message_counts = json.loads(result[0])
-                last_reset_data = json.loads(result[1])
-                config_data = json.loads(result[2])
+                # В PostgreSQL с JSONB поля уже являются словарями Python
+                message_counts = result["message_counts"]
+                last_reset_data = result["last_reset"]
+                config_data = result["config"]
+
+                # Если данные пришли как строки (старая версия), парсим JSON
+                if isinstance(message_counts, str):
+                    message_counts = json.loads(message_counts)
+                if isinstance(last_reset_data, str):
+                    last_reset_data = json.loads(last_reset_data)
+                if isinstance(config_data, str):
+                    config_data = json.loads(config_data)
 
                 # Создаем конфиг из сохраненных данных или используем дефолтный
                 config = RateLimitConfig(
@@ -92,7 +99,7 @@ class RateLimitRepository:
     def delete_rate_limit(self, user_id: int):
         """Удалить лимиты пользователя"""
         self.db.execute_query(
-            'DELETE FROM user_rate_limits WHERE user_id = ?',
+            'DELETE FROM user_rate_limits WHERE user_id = %s',
             (user_id,)
         )
 
@@ -106,19 +113,9 @@ class RateLimitRepository:
 
         if isinstance(dt_value, str):
             try:
-                # Пробуем разные форматы дат
-                for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f',
-                            '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f',
-                            '%Y-%m-%d %H:%M:%S.%f%z', '%Y-%m-%dT%H:%M:%S.%f%z']:
-                    try:
-                        return datetime.strptime(dt_value, fmt)
-                    except ValueError:
-                        continue
-
-                # Если ни один формат не подошел, возвращаем текущее время
-                return datetime.utcnow()
+                # PostgreSQL возвращает datetime в формате ISO
+                return datetime.fromisoformat(dt_value.replace('Z', '+00:00'))
             except Exception:
                 return datetime.utcnow()
 
-        # Если непонятный тип, возвращаем текущее время
         return datetime.utcnow()

@@ -18,40 +18,11 @@ class TariffRepository:
 
     def _init_tables(self):
         """Инициализация таблиц тарифов"""
-        # Таблица тарифных планов
-        self.db.execute_query('''
-            CREATE TABLE IF NOT EXISTS tariff_plans (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                description TEXT,
-                price REAL DEFAULT 0,
-                is_active BOOLEAN DEFAULT TRUE,
-                is_default BOOLEAN DEFAULT FALSE,
-                rate_limits TEXT NOT NULL,
-                message_limits TEXT NOT NULL,
-                features TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        # Таблица пользовательских тарифов
-        self.db.execute_query('''
-            CREATE TABLE IF NOT EXISTS user_tariffs (
-                user_id INTEGER PRIMARY KEY,
-                tariff_plan_id INTEGER NOT NULL,
-                activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                expires_at TIMESTAMP,
-                is_active BOOLEAN DEFAULT TRUE,
-                FOREIGN KEY (tariff_plan_id) REFERENCES tariff_plans (id)
-            )
-        ''')
-
-        # Создаем тарифы по умолчанию если их нет
+        # Таблицы уже созданы в PostgreSQL инициализации
         self._create_default_tariffs()
 
     def _create_default_tariffs(self):
-        """Создать тарифы по умолчанию"""
+        """Создать тарифы по умолчанию если их нет"""
         default_tariffs = [
             TariffPlan(
                 id=0,  # Auto-increment
@@ -87,7 +58,7 @@ class TariffRepository:
         ]
 
         for tariff in default_tariffs:
-            existing = self.db.fetch_one('SELECT id FROM tariff_plans WHERE name = ?', (tariff.name,))
+            existing = self.db.fetch_one('SELECT id FROM tariff_plans WHERE name = %s', (tariff.name,))
             if not existing:
                 self.save_tariff_plan(tariff)
 
@@ -111,19 +82,28 @@ class TariffRepository:
             result = self.db.execute_query('''
                 INSERT INTO tariff_plans 
                 (name, description, price, is_active, is_default, rate_limits, message_limits, features, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
             ''', (
                 tariff.name, tariff.description, tariff.price, tariff.is_active, tariff.is_default,
                 json.dumps(data['rate_limits']), json.dumps(data['message_limits']),
                 json.dumps(data['features']), datetime.utcnow()
             ))
-            return result.lastrowid
+            # Получаем ID из результата
+            if hasattr(result, '__getitem__') and 'id' in result:
+                return result['id']
+            elif hasattr(result, 'lastrowid'):
+                return result.lastrowid
+            else:
+                # Если не можем получить ID, делаем запрос для получения последнего ID
+                last_id = self.db.fetch_one("SELECT LASTVAL() as id")
+                return last_id['id'] if last_id else 0
         else:  # Обновление существующего
             self.db.execute_query('''
                 UPDATE tariff_plans 
-                SET name = ?, description = ?, price = ?, is_active = ?, is_default = ?,
-                    rate_limits = ?, message_limits = ?, features = ?, updated_at = ?
-                WHERE id = ?
+                SET name = %s, description = %s, price = %s, is_active = %s, is_default = %s,
+                    rate_limits = %s, message_limits = %s, features = %s, updated_at = %s
+                WHERE id = %s
             ''', (
                 tariff.name, tariff.description, tariff.price, tariff.is_active, tariff.is_default,
                 json.dumps(data['rate_limits']), json.dumps(data['message_limits']),
@@ -136,7 +116,7 @@ class TariffRepository:
         result = self.db.fetch_one('''
             SELECT id, name, description, price, is_active, is_default, 
                    rate_limits, message_limits, features, created_at, updated_at
-            FROM tariff_plans WHERE id = ?
+            FROM tariff_plans WHERE id = %s
         ''', (tariff_id,))
 
         if result:
@@ -148,7 +128,7 @@ class TariffRepository:
         result = self.db.fetch_one('''
             SELECT id, name, description, price, is_active, is_default,
                    rate_limits, message_limits, features, created_at, updated_at
-            FROM tariff_plans WHERE name = ?
+            FROM tariff_plans WHERE name = %s
         ''', (name,))
 
         if result:
@@ -188,9 +168,14 @@ class TariffRepository:
         """Назначить тарифный план пользователю"""
         try:
             self.db.execute_query('''
-                INSERT OR REPLACE INTO user_tariffs 
+                INSERT INTO user_tariffs 
                 (user_id, tariff_plan_id, activated_at, expires_at, is_active)
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    tariff_plan_id = EXCLUDED.tariff_plan_id,
+                    activated_at = EXCLUDED.activated_at,
+                    expires_at = EXCLUDED.expires_at,
+                    is_active = EXCLUDED.is_active
             ''', (user_id, tariff_plan_id, datetime.utcnow(), expires_at, True))
             return True
         except Exception as e:
@@ -205,25 +190,37 @@ class TariffRepository:
                    tp.rate_limits, tp.message_limits, tp.features, tp.created_at, tp.updated_at
             FROM user_tariffs ut
             JOIN tariff_plans tp ON ut.tariff_plan_id = tp.id
-            WHERE ut.user_id = ? AND ut.is_active = TRUE
+            WHERE ut.user_id = %s AND ut.is_active = TRUE
         ''', (user_id,))
 
         if result:
-            tariff_plan = self._parse_tariff_plan(result[5:])
+            tariff_plan = self._parse_tariff_plan({
+                'id': result['id'],
+                'name': result['name'],
+                'description': result['description'],
+                'price': result['price'],
+                'is_active': result['is_active'],
+                'is_default': result['is_default'],
+                'rate_limits': result['rate_limits'],
+                'message_limits': result['message_limits'],
+                'features': result['features'],
+                'created_at': result['created_at'],
+                'updated_at': result['updated_at']
+            })
             return UserTariff(
-                user_id=result[0],
-                tariff_plan_id=result[1],
+                user_id=result['user_id'],
+                tariff_plan_id=result['tariff_plan_id'],
                 tariff_plan=tariff_plan,
-                activated_at=self._parse_datetime(result[2]),
-                expires_at=self._parse_datetime(result[3]),
-                is_active=bool(result[4])
+                activated_at=self._parse_datetime(result['activated_at']),
+                expires_at=self._parse_datetime(result['expires_at']),
+                is_active=bool(result['is_active'])
             )
         return None
 
     def remove_user_tariff(self, user_id: int) -> bool:
         """Удалить тариф пользователя"""
         try:
-            self.db.execute_query('DELETE FROM user_tariffs WHERE user_id = ?', (user_id,))
+            self.db.execute_query('DELETE FROM user_tariffs WHERE user_id = %s', (user_id,))
             return True
         except Exception as e:
             self.logger.error(f"Error removing tariff from user {user_id}: {e}")
@@ -232,9 +229,18 @@ class TariffRepository:
     def _parse_tariff_plan(self, row) -> TariffPlan:
         """Парсинг тарифного плана из строки БД"""
         try:
-            rate_limits_data = json.loads(row[6])
-            message_limits_data = json.loads(row[7])
-            features_data = json.loads(row[8]) if row[8] else {}
+            # В PostgreSQL с JSONB поля уже являются словарями Python
+            rate_limits_data = row['rate_limits']
+            message_limits_data = row['message_limits']
+            features_data = row['features'] if row['features'] else {}
+
+            # Если данные пришли как строка (старая версия), парсим JSON
+            if isinstance(rate_limits_data, str):
+                rate_limits_data = json.loads(rate_limits_data)
+            if isinstance(message_limits_data, str):
+                message_limits_data = json.loads(message_limits_data)
+            if isinstance(features_data, str):
+                features_data = json.loads(features_data) if features_data else {}
 
             rate_limits = RateLimitConfig(
                 messages_per_minute=rate_limits_data.get('messages_per_minute', 5),
@@ -249,17 +255,17 @@ class TariffRepository:
             )
 
             return TariffPlan(
-                id=row[0],
-                name=row[1],
-                description=row[2],
-                price=row[3],
-                is_active=bool(row[4]),
-                is_default=bool(row[5]),
+                id=row['id'],
+                name=row['name'],
+                description=row['description'],
+                price=row['price'],
+                is_active=bool(row['is_active']),
+                is_default=bool(row['is_default']),
                 rate_limits=rate_limits,
                 message_limits=message_limits,
                 features=features_data,
-                created_at=self._parse_datetime(row[9]),
-                updated_at=self._parse_datetime(row[10])
+                created_at=self._parse_datetime(row['created_at']),
+                updated_at=self._parse_datetime(row['updated_at'])
             )
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             self.logger.error(f"Error parsing tariff plan: {e}")
@@ -275,12 +281,8 @@ class TariffRepository:
 
         if isinstance(dt_value, str):
             try:
-                for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f']:
-                    try:
-                        return datetime.strptime(dt_value, fmt)
-                    except ValueError:
-                        continue
-                return datetime.utcnow()
+                # PostgreSQL возвращает datetime в формате ISO
+                return datetime.fromisoformat(dt_value.replace('Z', '+00:00'))
             except Exception:
                 return datetime.utcnow()
 

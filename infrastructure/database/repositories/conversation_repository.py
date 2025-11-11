@@ -11,14 +11,14 @@ class ConversationRepository:
         """Сохранить сообщение"""
         self.db.execute_query('''
             INSERT INTO conversation_context (user_id, role, content)
-            VALUES (?, ?, ?)
+            VALUES (%s, %s, %s)
         ''', (user_id, role, content))
 
         self.db.execute_query('''
             DELETE FROM conversation_context 
-            WHERE user_id = ? AND id NOT IN (
+            WHERE user_id = %s AND id NOT IN (
                 SELECT id FROM conversation_context 
-                WHERE user_id = ? 
+                WHERE user_id = %s 
                 ORDER BY timestamp DESC 
                 LIMIT 15
             )
@@ -29,31 +29,32 @@ class ConversationRepository:
         results = self.db.fetch_all('''
             SELECT role, content 
             FROM conversation_context 
-            WHERE user_id = ? 
+            WHERE user_id = %s 
             ORDER BY timestamp DESC 
-            LIMIT ?
+            LIMIT %s
         ''', (user_id, max_context_messages))
 
-        return [{"role": role, "content": content} for role, content in reversed(results)]
+        return [{"role": row["role"], "content": row["content"]} for row in reversed(results)]
 
     def clear_conversation(self, user_id: int):
         """Очистить историю разговора"""
-        self.db.execute_query('DELETE FROM conversation_context WHERE user_id = ?', (user_id,))
+        self.db.execute_query('DELETE FROM conversation_context WHERE user_id = %s', (user_id,))
 
     def get_conversation_stats(self, user_id: int) -> Dict:
         """Получить статистику разговора"""
         total_messages = self.db.fetch_one(
-            'SELECT COUNT(*) FROM conversation_context WHERE user_id = ?',
+            'SELECT COUNT(*) FROM conversation_context WHERE user_id = %s',
             (user_id,)
-        )[0] or 0
+        )
+        total_messages = total_messages["count"] if total_messages else 0
 
         last_message = self.db.fetch_one('''
             SELECT timestamp FROM conversation_context 
-            WHERE user_id = ? 
+            WHERE user_id = %s 
             ORDER BY timestamp DESC LIMIT 1
         ''', (user_id,))
 
         return {
             'total_messages': total_messages,
-            'last_message_time': last_message[0] if last_message else None
+            'last_message_time': last_message["timestamp"] if last_message else None
         }

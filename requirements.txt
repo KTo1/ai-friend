@@ -8,5 +8,10 @@ opentelemetry-exporter-jaeger==1.18.0
 opentelemetry-instrumentation==0.39b0
 psutil==5.9.5
 requests==2.31.0
-google-generativeai>=0.3.0  # ← ДОБАВЛЯЕМ ДЛЯ GEMINI
-aiohttp==3.9.0  # ← ДОБАВЛЯЕМ для асинхронных HTTP запросов
+google-generativeai>=0.3.0
+aiohttp==3.9.0
+
+# Database
+psycopg2-binary>=2.9.0
+sqlalchemy>=2.0.0
+alembic>=1.12.0
