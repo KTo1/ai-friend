@@ -15,7 +15,7 @@ class DatabaseConfig:
 
     @property
     def port(self):
-        return int(os.getenv("DB_PORT", "15432"))
+        return int(os.getenv("DB_PORT", "25432"))
 
     @property
     def name(self):
