@@ -5,14 +5,15 @@ services:
   postgres:
     image: postgres:15
     environment:
-      POSTGRES_DB: ${DB_NAME:-friend_bot}
+      POSTGRES_DB: ${DB_NAME:-ai-friend}
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     ports:
-      - "5433:5432"  # ← ИЗМЕНИЛИ ПОРТ на 5433
+      - "5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/data:/var/lib/postgresql/data  # ← Храним на хосте!
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./postgres/backups:/backups  # ← Папка для бэкапов
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
       interval: 30s
@@ -88,25 +89,15 @@ services:
   grafana:
     image: grafana/grafana:latest
     ports:
-      - "3001:3000"  # ← ИЗМЕНИЛИ ПОРТ на 3001
+      - "3001:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
       - grafana_data:/var/lib/grafana
-    restart: unless-stopped
-    networks:
-      - bot-network
-
-  # Ollama (опционально)
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11435:11434"  # ← ИЗМЕНИЛИ ПОРТ на 11435
-    volumes:
-      - ollama_data:/root/.ollama
     restart: unless-stopped
     networks:
       - bot-network
