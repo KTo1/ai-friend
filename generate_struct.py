@@ -13,52 +13,65 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt", exc
     """
 
     if exclude_dirs is None:
-        exclude_dirs = ['.git', '__pycache__', '.vscode', '.idea', 'venv', 'env', 'node_modules']
+        # Добавил .github, чтобы исключить стандартные CI/CD папки
+        exclude_dirs = ['.git', '__pycache__', '.vscode', '.idea', 'venv', 'env', 'node_modules', '.github']
 
     root_path = pathlib.Path(root_dir)
+    # Определяем типы файлов, для которых будем выводить содержимое и отображать в структуре
+    supported_suffixes = ['.py', '.md', '.yml', '.yaml', '.json', '.env']
 
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write("=" * 60 + "\n")
         f.write("📁 СТРУКТУРА ПРОЕКТА И ЛИСТИНГ МОДУЛЕЙ\n")
         f.write("=" * 60 + "\n\n")
 
-        # Собираем структуру
-        python_files = []
+        # Собираем структуру и файлы для листинга
+        files_to_list = []
 
+        # Сначала записываем структуру
         for file_path in root_path.rglob('*'):
             if any(exclude in str(file_path) for exclude in exclude_dirs):
+                continue
+
+            # Игнорируем сам выходной файл
+            if file_path.name == output_file:
                 continue
 
             relative_path = file_path.relative_to(root_path)
 
             if file_path.is_file():
-                if file_path.suffix in ['.py', '.txt', '.md', '.yml', '.yaml', '.json', '.env']:
-                    # Записываем файл
+                if file_path.suffix in supported_suffixes:
+                    # Записываем файл в структуру
                     indent = "  " * (len(relative_path.parts) - 1)
-                    icon = "📄" if file_path.suffix == '.py' else "📝"
+                    icon = "🐍" if file_path.suffix == '.py' else "📝"
                     f.write(f"{indent}{icon} {relative_path}\n")
 
-                    if file_path.suffix == '.py':
-                        python_files.append(file_path)
+                    # Добавляем файл в список для последующего листинга содержимого
+                    files_to_list.append(file_path)
             else:
                 # Записываем директорию
                 indent = "  " * (len(relative_path.parts) - 1)
                 f.write(f"{indent}📁 {relative_path}/\n")
 
-        # Добавляем листинг Python модулей
+        if not files_to_list:
+            f.write("\n(Нет поддерживаемых файлов для листинга в проекте)\n")
+
+        # Добавляем листинг содержимого файлов
         f.write("\n" + "=" * 60 + "\n")
-        f.write("🐍 ЛИСТИНГ PYTHON МОДУЛЕЙ\n")
+        f.write("📜 ЛИСТИНГ СОДЕРЖИМОГО ФАЙЛОВ\n")
         f.write("=" * 60 + "\n\n")
 
-        for py_file in sorted(python_files):
+        # Выводим содержимое всех собранных файлов
+        for file_path in sorted(files_to_list):
+            relative_path = file_path.relative_to(root_path)
             f.write(f"\n{'━' * 80}\n")
-            f.write(f"📄 {py_file.relative_to(root_path)}\n")
+            f.write(f"📄 {relative_path}\n")
             f.write(f"{'━' * 80}\n")
 
             try:
-                with open(py_file, 'r', encoding='utf-8') as pf:
+                with open(file_path, 'r', encoding='utf-8') as pf:
                     content = pf.read()
-                    if content.strip():  # Если файл не пустой
+                    if content.strip():
                         f.write(content + "\n")
                     else:
                         f.write("# (пустой файл)\n")
@@ -66,34 +79,41 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt", exc
                 f.write(f"# Ошибка чтения файла: {e}\n")
 
     print(f"✅ Структура проекта сохранена в: {output_file}")
-    print(f"📊 Найдено Python файлов: {len(python_files)}")
+    print(f"📊 Найдено файлов для листинга: {len(files_to_list)}")
 
 
 def get_compact_structure(root_dir=".", output_file="project_compact.txt"):
     """
     Компактная версия только со структурой (без содержимого файлов)
     """
-    exclude_dirs = ['.git', '__pycache__', '.vscode', '.idea', 'venv', 'env', 'node_modules']
+    exclude_dirs = ['.git', '__pycache__', '.vscode', '.idea', 'venv', 'env', 'node_modules', '.github']
     root_path = pathlib.Path(root_dir)
+    supported_suffixes = ['.py', '.txt', '.md', '.yml', '.yaml', '.json', '.env']  # Добавлено для консистентности
 
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write("📁 КОМПАКТНАЯ СТРУКТУРА ПРОЕКТА\n")
         f.write("=" * 50 + "\n\n")
 
-        python_files = []
+        python_files = []  # Считаем только Python-файлы для сводки
+        all_included_files = []
 
         for file_path in sorted(root_path.rglob('*')):
             if any(exclude in str(file_path) for exclude in exclude_dirs):
                 continue
 
+            # Игнорируем сам выходной файл
+            if file_path.name == output_file:
+                continue
+
             relative_path = file_path.relative_to(root_path)
 
             if file_path.is_file():
-                if file_path.suffix in ['.py', '.txt', '.md', '.yml', '.yaml', '.json']:
+                if file_path.suffix in supported_suffixes:
                     indent = "    " * (len(relative_path.parts) - 1)
                     icon = "🐍" if file_path.suffix == '.py' else "📄"
                     f.write(f"{indent}{icon} {relative_path}\n")
 
+                    all_included_files.append(relative_path)
                     if file_path.suffix == '.py':
                         python_files.append(relative_path)
             else:
@@ -101,9 +121,13 @@ def get_compact_structure(root_dir=".", output_file="project_compact.txt"):
                 f.write(f"{indent}📁 {relative_path}/\n")
 
         # Список всех Python модулей
-        f.write(f"\n📊 Всего Python модулей: {len(python_files)}\n")
-        for py_file in sorted(python_files):
-            f.write(f"   • {py_file}\n")
+        f.write(f"\n📊 Всего учтенных файлов: {len(all_included_files)}\n")
+        f.write(f"   (Включая {len(python_files)} Python модулей)\n")
+
+        if python_files:
+            f.write("\n🐍 Список Python модулей:\n")
+            for py_file in sorted(python_files):
+                f.write(f"   • {py_file}\n")
 
     print(f"✅ Компактная структура сохранена в: {output_file}")
 
@@ -117,5 +141,5 @@ if __name__ == "__main__":
 
     print("\n🎯 Теперь вы можете отправить мне:")
     print("   • project_structure_compact.txt - для общей структуры")
-    print("   • project_structure_full.txt - если нужен полный код")
-    print("\n💡 Рекомендую начать с компактной версии!")
+    print("   • project_structure_full.txt - если нужен полный код (включая yml, json, env и т.д.)")
+    print("\n💡 Рекомендую начать с компактной версии, чтобы не перегружать меня!")

@@ -12,13 +12,23 @@
         "targets": [
           {
             "expr": "rate(bot_messages_processed_total[5m])",
-            "legendFormat": "messages/sec",
+            "legendFormat": "Processing Rate",
             "refId": "A"
           }
         ],
-        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
         "fieldConfig": {
-          "defaults": {"color": {"mode": "palette-classic"}, "unit": "ops"}
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "unit": "ops"
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 0
         }
       },
       {
@@ -32,66 +42,118 @@
             "refId": "A"
           }
         ],
-        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
-      },
-      {
-        "id": 3,
-        "title": "Active Users",
-        "type": "stat",
-        "targets": [
-          {
-            "expr": "bot_active_users",
-            "legendFormat": "users",
-            "refId": "A"
-          }
-        ],
-        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
-        "fieldConfig": {
-          "defaults": {"color": {"mode": "thresholds"}}
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 0
         }
       },
       {
-        "id": 4,
-        "title": "AI Requests Status",
-        "type": "stat",
-        "targets": [
-          {
-            "expr": "openai_requests_total",
-            "legendFormat": "{{status}}",
-            "refId": "A"
-          }
-        ],
-        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
-      },
-      {
-        "id": 5,
+        "id": 3,
         "title": "Message Processing Time",
         "type": "timeseries",
         "targets": [
           {
             "expr": "rate(message_processing_duration_seconds_sum[5m]) / rate(message_processing_duration_seconds_count[5m])",
-            "legendFormat": "avg time",
+            "legendFormat": "Avg Processing Time",
             "refId": "A"
           }
         ],
-        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
-        "fieldConfig": {"defaults": {"unit": "s"}}
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 8
+        }
       },
       {
-        "id": 6,
-        "title": "Conversation Length",
+        "id": 4,
+        "title": "Active Users",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "bot_active_users",
+            "legendFormat": "Active Users",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "red",
+                  "value": null
+                },
+                {
+                  "color": "yellow",
+                  "value": 10
+                },
+                {
+                  "color": "green",
+                  "value": 50
+                }
+              ]
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 8
+        }
+      },
+      {
+        "id": 5,
+        "title": "AI Provider Requests",
         "type": "timeseries",
         "targets": [
           {
-            "expr": "conversation_message_count",
-            "legendFormat": "messages",
+            "expr": "rate(openai_requests_total[5m])",
+            "legendFormat": "{{status}}",
             "refId": "A"
           }
         ],
-        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 16
+        }
+      },
+      {
+        "id": 6,
+        "title": "Conversation Length Distribution",
+        "type": "bargauge",
+        "targets": [
+          {
+            "expr": "conversation_message_count",
+            "legendFormat": "Messages in Conversation",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 24
+        }
       }
     ],
-    "time": {"from": "now-6h", "to": "now"},
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
     "refresh": "10s"
   }
 }
