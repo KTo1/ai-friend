@@ -138,6 +138,7 @@ services:
       - LS_JAVA_OPTS=-Xmx256m -Xms256m
     depends_on:
       - elasticsearch
+    restart: on-failure
     networks:
       - bot-network
     healthcheck:
