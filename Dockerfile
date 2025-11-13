@@ -15,6 +15,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копирование исходного кода
 COPY . .
 
+# Создаем папку для логов
+RUN mkdir -p /app/logs
+
 # Создание пользователя для безопасности
 RUN useradd -m -r bot && chown -R bot /app
 USER bot
