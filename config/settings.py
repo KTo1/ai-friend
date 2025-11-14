@@ -90,39 +90,6 @@ class BotConfig:
         return token
 
 
-class Config:
-    def __init__(self):
-        self._database = DatabaseConfig()
-        self._openai = OpenAIConfig()
-        self._monitoring = MonitoringConfig()
-        self._bot = BotConfig()
-        self._deepseek = DeepSeekConfig()
-
-    @property
-    def database(self):
-        return self._database
-
-    @property
-    def openai(self):
-        return self._openai
-
-    @property
-    def deepseek(self):
-        return self._deepseek
-
-    @property
-    def monitoring(self):
-        return self._monitoring
-
-    @property
-    def bot(self):
-        return self._bot
-
-    @property
-    def rate_limit(self):
-        return RateLimitConfig()
-
-
 @dataclass
 class DeepSeekConfig:
     @property
@@ -184,6 +151,67 @@ class MessageLimitConfig:
     @property
     def default_max_context_length(self):
         return int(os.getenv("DEFAULT_MAX_CONTEXT_LENGTH", "4000"))
+
+
+@dataclass
+class ProactiveConfig:
+    @property
+    def check_interval(self):
+        return int(os.getenv("PROACTIVE_CHECK_INTERVAL", "600"))  # 10 минут
+
+    @property
+    def min_messages_for_activation(self):
+        return int(os.getenv("PROACTIVE_MIN_MESSAGES", "3"))
+
+    @property
+    def max_messages_per_day(self):
+        return int(os.getenv("PROACTIVE_MAX_PER_DAY", "2"))
+
+
+class Config:
+    def __init__(self):
+        self._database = DatabaseConfig()
+        self._openai = OpenAIConfig()
+        self._monitoring = MonitoringConfig()
+        self._bot = BotConfig()
+        self._deepseek = DeepSeekConfig()
+        self._proactive = ProactiveConfig()
+
+    @property
+    def database(self):
+        return self._database
+
+    @property
+    def openai(self):
+        return self._openai
+
+    @property
+    def deepseek(self):
+        return self._deepseek
+
+    @property
+    def monitoring(self):
+        return self._monitoring
+
+    @property
+    def bot(self):
+        return self._bot
+
+    @property
+    def rate_limit(self):
+        return RateLimitConfig()
+
+    @property
+    def admin(self):
+        return AdminConfig()
+
+    @property
+    def message_limits(self):
+        return MessageLimitConfig()
+
+    @property
+    def proactive(self):
+        return self._proactive
 
 
 config = Config()
