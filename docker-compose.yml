@@ -70,6 +70,10 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    # Монтируем директорию логов хоста в контейнер,
+    # чтобы Logstash мог их прочитать
+    volumes:
+      - ./logs:/app/logs
 
   # Prometheus для сбора метрик
   prometheus:

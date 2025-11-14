@@ -18,7 +18,7 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt", exc
 
     root_path = pathlib.Path(root_dir)
     # Определяем типы файлов, для которых будем выводить содержимое и отображать в структуре
-    supported_suffixes = ['.py', '.md', '.yml', '.yaml', '.json', '.env', '.dockerignore']
+    supported_suffixes = ['.py', '.md', '.yml', '.yaml', '.json', '.env', '.conf', '.dockerignore']
 
     # Файлы без расширения, которые нужно включить
     important_files_without_extension = ['Dockerfile', 'Makefile']

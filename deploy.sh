@@ -193,7 +193,7 @@ setup_elk() {
     log "Setting up ELK stack..."
 
     # Устанавливаем правильные права для директорий с логами
-    chmod -R 755 logs
+    chmod -R 777 logs
     chmod -R 755 elk
 
     log "ELK stack setup completed ✓"
@@ -628,7 +628,7 @@ show_info() {
     log "📊 Monitoring URLs:"
     echo "   Grafana:      http://localhost:3001 (admin/admin)"
     echo "   Kibana:       http://localhost:5601"
-    echo "   Prometheus:   http://localhost:9090"
+    echo "   Prometheus:   http://localhost:9091"
     echo "   Bot Metrics:  http://localhost:8000/metrics"
     echo "   Elasticsearch: http://localhost:9200"
     echo ""

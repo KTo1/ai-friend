@@ -15,12 +15,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копирование исходного кода
 COPY . .
 
+# Создание пользователя для безопасности
+RUN useradd -m -r bot
+
 # Создаем папку для логов
 RUN mkdir -p /app/logs
+RUN chown -R bot /app
+RUN chmod -R 777 /app/logs
 
-# Создание пользователя для безопасности
-RUN useradd -m -r bot && chown -R bot /app
 USER bot
+
 
 # Экспоз порта для метрик
 EXPOSE 8000
