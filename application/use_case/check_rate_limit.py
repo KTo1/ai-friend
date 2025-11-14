@@ -44,6 +44,7 @@ class CheckRateLimitUseCase:
 
         message = "⏰ Превышен лимит сообщений!\n\n"
 
+        # Определяем какой именно лимит превышен
         if remaining['minute'] <= 0:
             message += f"• Минутный лимит: {config['minute']} сообщений\n"
             message += f"⏳ Жди: {time_until_reset['minute']}\n\n"
