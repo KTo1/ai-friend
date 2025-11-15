@@ -27,8 +27,8 @@ class DeepSeekLoadTester:
         # Устанавливаем DeepSeek как провайдера
         os.environ['AI_PROVIDER'] = 'deepseek'
 
-        # Инициализируем компоненты бота
-        self._initialize_bot_components()
+        self.ai_client = None
+        self.database = None
 
         # Тестовые сообщения (оптимизированы для DeepSeek)
         self.test_messages = [
@@ -49,7 +49,7 @@ class DeepSeekLoadTester:
             "Где ты?"
         ]
 
-    def _initialize_bot_components(self):
+    async def _initialize_bot_components(self):
         """Инициализация всех компонентов бота"""
         try:
             print("🔧 Initializing bot components with DeepSeek...")
@@ -108,6 +108,12 @@ class DeepSeekLoadTester:
         except Exception as e:
             print(f"❌ Error initializing bot components: {e}")
             raise
+
+    async def _close_ai_client(self):
+        """Корректное закрытие AI клиента"""
+        if self.ai_client and hasattr(self.ai_client, 'close'):
+            await self.ai_client.close()
+            print("✅ AI client closed properly")
 
     async def process_user_message(self, user_id: int, message_text: str):
         """Обработка сообщения пользователя с DeepSeek"""
@@ -193,53 +199,62 @@ class DeepSeekLoadTester:
         print(f"🤖 AI Provider: DeepSeek")
         print("=" * 60)
 
-        # Проверяем доступность DeepSeek
-        if not await self._check_deepseek_availability():
-            print("❌ DeepSeek is not available. Check your API key and network.")
-            return
+        try:
+            # Инициализируем компоненты
+            await self._initialize_bot_components()
 
-        self.results['start_time'] = datetime.now().isoformat()
-        start_time = time.time()
-        tasks = []
+            # Проверяем доступность DeepSeek
+            if not await self._check_deepseek_availability():
+                print("❌ DeepSeek is not available. Check your API key and network.")
+                return
 
-        # Создаем тестовых пользователей в базе
-        await self._create_test_users()
+            self.results['start_time'] = datetime.now().isoformat()
+            start_time = time.time()
+            tasks = []
 
-        for second in range(duration_seconds):
-            print(f"⏱️ Second {second + 1}/{duration_seconds}")
+            # Создаем тестовых пользователей в базе
+            await self._create_test_users()
 
-            # Создаем задачи для текущей секунды
-            for user_offset in range(self.messages_per_second):
-                user_id = (second * self.messages_per_second + user_offset) % self.total_users + 1
-                message_text = random.choice(self.test_messages)
+            for second in range(duration_seconds):
+                print(f"⏱️ Second {second + 1}/{duration_seconds}")
 
-                task = asyncio.create_task(
-                    self.process_user_message(user_id, message_text)
-                )
-                tasks.append(task)
+                # Создаем задачи для текущей секунды
+                for user_offset in range(self.messages_per_second):
+                    user_id = (second * self.messages_per_second + user_offset) % self.total_users + 1
+                    message_text = random.choice(self.test_messages)
 
-            # Поддерживаем точную частоту
-            elapsed = time.time() - start_time
-            wait_time = max(0, (second + 1) - elapsed)
-            await asyncio.sleep(wait_time)
+                    task = asyncio.create_task(
+                        self.process_user_message(user_id, message_text)
+                    )
+                    tasks.append(task)
 
-        # Ожидаем завершения всех задач
-        await asyncio.gather(*tasks, return_exceptions=True)
+                # Поддерживаем точную частоту
+                elapsed = time.time() - start_time
+                wait_time = max(0, (second + 1) - elapsed)
+                await asyncio.sleep(wait_time)
 
-        self.results['end_time'] = datetime.now().isoformat()
-        total_duration = time.time() - start_time
-        self.results['total_duration'] = total_duration
-        self.results['messages_per_second'] = self.results['total_messages'] / total_duration
+            # Ожидаем завершения всех задач
+            await asyncio.gather(*tasks, return_exceptions=True)
 
-        self._print_results()
+            self.results['end_time'] = datetime.now().isoformat()
+            total_duration = time.time() - start_time
+            self.results['total_duration'] = total_duration
+            self.results['messages_per_second'] = self.results['total_messages'] / total_duration
 
-        # Очищаем тестовых пользователей
-        await self._cleanup_test_users()
+            self._print_results()
+
+        finally:
+            # Всегда очищаем ресурсы
+            await self._cleanup()
 
     async def _check_deepseek_availability(self) -> bool:
         """Проверка доступности DeepSeek API"""
         try:
             print("🔍 Checking DeepSeek availability...")
+
+            if not self.ai_client:
+                print("❌ AI client is not initialized")
+                return False
 
             # Простой тестовый запрос
             test_messages = [{"role": "user", "content": "Привет, ответь 'тест успешен'"}]
@@ -328,6 +343,21 @@ class DeepSeekLoadTester:
         except Exception as e:
             print(f"❌ Error during cleanup: {e}")
 
+    async def _cleanup(self):
+        """Полная очистка всех ресурсов"""
+        print("🧹 Performing final cleanup...")
+
+        # Очищаем тестовых пользователей
+        await self._cleanup_test_users()
+
+        # Закрываем AI клиент
+        await self._close_ai_client()
+
+        # Закрываем соединение с базой данных
+        if self.database and hasattr(self.database, 'close'):
+            self.database.close()
+            print("✅ Database connection closed")
+
     def _print_results(self):
         """Вывод результатов"""
         print("\n" + "=" * 60)
@@ -365,7 +395,7 @@ async def main():
 
     # Сценарии тестирования (осторожные для DeepSeek)
     scenarios = [
-        {"users": 5, "messages_per_second": 1, "duration": 30},
+        {"users": 100, "messages_per_second": 1, "duration": 30},
         # {"users": 10, "messages_per_second": 1, "duration": 30},
         # {"users": 20, "messages_per_second": 1, "duration": 30},
         # {"users": 30, "messages_per_second": 1, "duration": 30},
@@ -381,11 +411,14 @@ async def main():
             messages_per_second=scenario['messages_per_second']
         )
 
-        await tester.run_load_test(duration_seconds=scenario['duration'])
-
-        # Пауза между сценариями (чтобы не превысить лимиты DeepSeek)
-        print("💤 Waiting 10 seconds before next scenario...")
-        await asyncio.sleep(10)
+        try:
+            await tester.run_load_test(duration_seconds=scenario['duration'])
+        except Exception as e:
+            print(f"❌ Error during test scenario: {e}")
+        finally:
+            # Пауза между сценариями (чтобы не превысить лимиты DeepSeek)
+            print("💤 Waiting 10 seconds before next scenario...")
+            await asyncio.sleep(10)
 
 
 if __name__ == "__main__":
@@ -399,4 +432,11 @@ if __name__ == "__main__":
 
     load_dotenv()
 
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n🛑 Load test interrupted by user")
+    except Exception as e:
+        print(f"\n💥 Unexpected error: {e}")
+    finally:
+        print("🏁 Load test finished")
