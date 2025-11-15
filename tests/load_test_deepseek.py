@@ -5,6 +5,7 @@ import json
 import os
 import sys
 from datetime import datetime
+from statistics import mean
 
 # Добавляем путь к проекту
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -21,7 +22,9 @@ class DeepSeekLoadTester:
             'ai_errors': 0,
             'total_messages': 0,
             'start_time': None,
-            'end_time': None
+            'end_time': None,
+            'response_times': [],  # Добавляем сбор времени ответов
+            'processing_times': []  # Общее время обработки
         }
 
         # Устанавливаем DeepSeek как провайдера
@@ -119,6 +122,7 @@ class DeepSeekLoadTester:
         """Обработка сообщения пользователя с DeepSeek"""
         try:
             start_time = time.time()
+            ai_response_time = None
 
             # 1. Проверка блокировки
             if self.block_service.is_user_blocked(user_id):
@@ -159,9 +163,15 @@ class DeepSeekLoadTester:
             profile_data = self.profile_repo.get_profile(user_id)
 
             try:
+                # Замеряем время именно AI ответа
+                ai_start_time = time.time()
                 response = await self.handle_message_uc.execute(
                     user_id, message_text, system_prompt, profile_data
                 )
+                ai_response_time = time.time() - ai_start_time
+
+                # Сохраняем время ответа AI
+                self.results['response_times'].append(ai_response_time)
 
                 # Проверяем что ответ не пустой
                 if not response or len(response.strip()) < 5:
@@ -177,11 +187,18 @@ class DeepSeekLoadTester:
             self.check_rate_limit_uc.record_message_usage(user_id)
 
             processing_time = time.time() - start_time
+            self.results['processing_times'].append(processing_time)
 
             self.results['successful'] += 1
             self.results['total_messages'] += 1
 
-            print(f"✅ User {user_id}: '{message_text}' → ({processing_time:.2f}s)")
+            # Выводим информацию о времени
+            time_info = f"({processing_time:.2f}s total"
+            if ai_response_time is not None:
+                time_info += f", {ai_response_time:.2f}s AI"
+            time_info += ")"
+
+            print(f"✅ User {user_id}: '{message_text}' → {time_info}")
 
             return True
 
@@ -241,11 +258,40 @@ class DeepSeekLoadTester:
             self.results['total_duration'] = total_duration
             self.results['messages_per_second'] = self.results['total_messages'] / total_duration
 
+            # Рассчитываем статистику времени
+            self._calculate_time_stats()
+
             self._print_results()
 
         finally:
             # Всегда очищаем ресурсы
             await self._cleanup()
+
+    def _calculate_time_stats(self):
+        """Рассчитывает статистику по времени ответов"""
+        if self.results['response_times']:
+            self.results['avg_response_time'] = mean(self.results['response_times'])
+            self.results['min_response_time'] = min(self.results['response_times'])
+            self.results['max_response_time'] = max(self.results['response_times'])
+            self.results['response_time_95'] = sorted(self.results['response_times'])[
+                int(len(self.results['response_times']) * 0.95)]
+        else:
+            self.results['avg_response_time'] = 0
+            self.results['min_response_time'] = 0
+            self.results['max_response_time'] = 0
+            self.results['response_time_95'] = 0
+
+        if self.results['processing_times']:
+            self.results['avg_processing_time'] = mean(self.results['processing_times'])
+            self.results['min_processing_time'] = min(self.results['processing_times'])
+            self.results['max_processing_time'] = max(self.results['processing_times'])
+            self.results['processing_time_95'] = sorted(self.results['processing_times'])[
+                int(len(self.results['processing_times']) * 0.95)]
+        else:
+            self.results['avg_processing_time'] = 0
+            self.results['min_processing_time'] = 0
+            self.results['max_processing_time'] = 0
+            self.results['processing_time_95'] = 0
 
     async def _check_deepseek_availability(self) -> bool:
         """Проверка доступности DeepSeek API"""
@@ -377,11 +423,30 @@ class DeepSeekLoadTester:
             success_rate = (self.results['successful'] / self.results['total_messages']) * 100
             print(f"Success Rate: {success_rate:.1f}%")
 
+        # Вывод статистики времени
+        print("\n⏱️  RESPONSE TIME STATISTICS")
+        print("-" * 40)
+        if self.results['response_times']:
+            print(f"AI Response Time (avg): {self.results['avg_response_time']:.3f}s")
+            print(f"AI Response Time (min): {self.results['min_response_time']:.3f}s")
+            print(f"AI Response Time (max): {self.results['max_response_time']:.3f}s")
+            print(f"AI Response Time (95th %): {self.results['response_time_95']:.3f}s")
+            print(f"Total Processing Time (avg): {self.results['avg_processing_time']:.3f}s")
+            print(f"Total Processing Time (min): {self.results['min_processing_time']:.3f}s")
+            print(f"Total Processing Time (max): {self.results['max_processing_time']:.3f}s")
+            print(f"Total Processing Time (95th %): {self.results['processing_time_95']:.3f}s")
+
+            # Разница между общим временем и временем AI
+            overhead = self.results['avg_processing_time'] - self.results['avg_response_time']
+            print(f"System Overhead: {overhead:.3f}s")
+        else:
+            print("No response time data available")
+
         # Сохраняем результаты
         filename = f"deepseek_load_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         with open(filename, 'w') as f:
             json.dump(self.results, f, indent=2)
-        print(f"💾 Results saved to {filename}")
+        print(f"\n💾 Results saved to {filename}")
 
 
 async def main():
@@ -395,7 +460,7 @@ async def main():
 
     # Сценарии тестирования (осторожные для DeepSeek)
     scenarios = [
-        {"users": 100, "messages_per_second": 1, "duration": 30},
+        {"users": 5, "messages_per_second": 1, "duration": 30},
         # {"users": 10, "messages_per_second": 1, "duration": 30},
         # {"users": 20, "messages_per_second": 1, "duration": 30},
         # {"users": 30, "messages_per_second": 1, "duration": 30},
