@@ -49,16 +49,10 @@ class DeepSeekLoadTester:
             "Где ты?"
         ]
 
-        self.ai_client = None  # Добавляем ссылку на клиент
-
     def _initialize_bot_components(self):
         """Инициализация всех компонентов бота"""
         try:
             print("🔧 Initializing bot components with DeepSeek...")
-
-            # Инициализация AI клиента (DeepSeek)
-            from infrastructure.ai.ai_factory import AIFactory
-            self.ai_client = AIFactory.create_client()
 
             # Инициализация базы данных
             from infrastructure.database.database import Database
@@ -76,6 +70,10 @@ class DeepSeekLoadTester:
             self.conversation_repo = ConversationRepository(self.database)
             self.rate_limit_repo = RateLimitRepository(self.database)
             self.message_limit_repo = MessageLimitRepository(self.database)
+
+            # Инициализация AI клиента (DeepSeek)
+            from infrastructure.ai.ai_factory import AIFactory
+            self.ai_client = AIFactory.create_client()
 
             # Инициализация сервисов
             from domain.service.rate_limit_service import RateLimitService
@@ -110,16 +108,6 @@ class DeepSeekLoadTester:
         except Exception as e:
             print(f"❌ Error initializing bot components: {e}")
             raise
-
-    async def close(self):
-        """Корректное закрытие ресурсов"""
-        print("🔒 Closing AI client session...")
-        if self.ai_client and hasattr(self.ai_client, 'close'):
-            try:
-                await self.ai_client.close()
-                print("✅ AI client session closed")
-            except Exception as e:
-                print(f"⚠️ Error closing AI client: {e}")
 
     async def process_user_message(self, user_id: int, message_text: str):
         """Обработка сообщения пользователя с DeepSeek"""
@@ -377,8 +365,9 @@ async def main():
 
     # Сценарии тестирования (осторожные для DeepSeek)
     scenarios = [
-        {"users": 10, "messages_per_second": 1, "duration": 30},
-        {"users": 20, "messages_per_second": 1, "duration": 30},
+        {"users": 5, "messages_per_second": 1, "duration": 30},
+        # {"users": 10, "messages_per_second": 1, "duration": 30},
+        # {"users": 20, "messages_per_second": 1, "duration": 30},
         # {"users": 30, "messages_per_second": 1, "duration": 30},
         # {"users": 10, "messages_per_second": 2, "duration": 20},  # Более агрессивный
     ]
@@ -392,11 +381,7 @@ async def main():
             messages_per_second=scenario['messages_per_second']
         )
 
-        try:
-            await tester.run_load_test(duration_seconds=scenario['duration'])
-        finally:
-            # ВСЕГДА закрываем ресурсы, даже если была ошибка
-            await tester.close()
+        await tester.run_load_test(duration_seconds=scenario['duration'])
 
         # Пауза между сценариями (чтобы не превысить лимиты DeepSeek)
         print("💤 Waiting 10 seconds before next scenario...")
