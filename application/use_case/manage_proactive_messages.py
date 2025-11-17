@@ -150,22 +150,27 @@ class ProactiveMessageManager:
                 user_id, profile, activity, trigger, conversation_context
             )
 
-            if message and self.bot and self.bot.application:
-                await self.bot.application.bot.send_message(
+            if message and hasattr(self.bot, '_safe_send_message'):
+                # Используем безопасный метод отправки через TelegramMessageSender
+                success = await self.bot._safe_send_message(
                     chat_id=user_id,
                     text=message
                 )
 
-                # Обновляем время последнего проактивного сообщения
-                activity.last_proactive_time = datetime.utcnow()
+                if success:
+                    # Обновляем время последнего проактивного сообщения
+                    activity.last_proactive_time = datetime.utcnow()
 
-                # Сохраняем в базу
-                self.proactive_repo.save_activity(activity)
+                    # Сохраняем в базу
+                    self.proactive_repo.save_activity(activity)
 
-                self.logger.info(f"📨 Telegram proactive message sent to {user_id}")
-                return True
+                    self.logger.info(f"📨 Telegram proactive message sent to {user_id}")
+                    return True
+                else:
+                    self.logger.error(f"Failed to send proactive message to {user_id}")
+                    return False
             else:
-                self.logger.error("❌ Cannot send message: bot or application not available")
+                self.logger.error("❌ Cannot send message: bot or safe_send_message method not available")
                 return False
 
         except Exception as e:

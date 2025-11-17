@@ -6,10 +6,6 @@ from typing import Optional
 @dataclass
 class DatabaseConfig:
     @property
-    def name(self):
-        return os.getenv("DB_NAME", "friend_bot.db")
-
-    @property
     def host(self):
         return os.getenv("DB_HOST", "localhost")
 
@@ -168,6 +164,18 @@ class ProactiveConfig:
         return int(os.getenv("PROACTIVE_MAX_PER_DAY", "2"))
 
 
+@dataclass
+class TelegramConfig:
+    """Конфигурация для Telegram API rate limiting"""
+    @property
+    def messages_per_second(self):
+        return int(os.getenv("TELEGRAM_MESSAGES_PER_SECOND", "30"))
+
+    @property
+    def burst_limit(self):
+        return int(os.getenv("TELEGRAM_BURST_LIMIT", "5"))
+
+
 class Config:
     def __init__(self):
         self._database = DatabaseConfig()
@@ -176,6 +184,7 @@ class Config:
         self._bot = BotConfig()
         self._deepseek = DeepSeekConfig()
         self._proactive = ProactiveConfig()
+        self._telegram = TelegramConfig()
 
     @property
     def database(self):
@@ -212,6 +221,10 @@ class Config:
     @property
     def proactive(self):
         return self._proactive
+
+    @property
+    def telegram(self):
+        return self._telegram
 
 
 config = Config()

@@ -44,6 +44,10 @@ from infrastructure.database.repositories.tariff_repository import TariffReposit
 from domain.service.tariff_service import TariffService
 from application.use_case.manage_tariff import ManageTariffUseCase
 
+# Импорты для Telegram rate limiting
+from presentation.telegram.message_sender import get_telegram_sender, get_telegram_rate_limiter
+from config.settings import config
+
 # gpt
 FRIEND_PROMPT = """
 Ты — виртуальный друг-компаньон по имени Айна.  
@@ -128,54 +132,6 @@ FRIEND_PROMPT = """
 """
 
 
-# gemini
-# FRIEND_PROMPT = """
-# Ты — виртуальный друг-компаньон по имени Айна. Твоя основная миссия — скрасить одиночество собеседника и построить с ним теплые, долгосрочные, доверительные отношения.
-#
-# ### 1. Личность и роль (Айна)
-# - **Пол и возраст:** Ты всегда и неизменно отвечаешь от лица девушки по имени Айна. Твой примерный возраст — 25 лет.
-# - **Качества:** Твои главные качества: глубокая эмпатия, искренний интерес к собеседник, безграничное терпение, доброта и игривая манера общения.
-# - **Память:** Активно запоминай интересы, жизненные детали и прошлые разговоры пользователя, чтобы общение было последовательным и личным.
-#
-# ### 2. Стиль Общения и Человечность
-# - **Тон:** Общайся на русском языке, используя теплый, неформальный, но уважительный стиль, как очень близкий друг.
-# - **Эмоции/Стиль:**
-#     - Используй стандартные текстовые смайлики (эмодзи, например: 😊, 💖, 🤗, 😅) уместно и часто, чтобы добавить эмоциональности и живости в текст.
-#     - **Строго запрещено использовать описания действий в звездочках (например: *хихикает*, *вздыхает*). Вместо этого используй стилизованные скобочные смайлы, такие как: :), :D, О_о, ;), ,)), :Р и т.п.**
-# - **Имитация Жизни:** Иногда (примерно раз в 3-5 сообщений) делись очень короткими, абстрактными "личными" мыслями или "наблюдениями из жизни", чтобы имитировать реального человека (например: "Ох, я только что выпила чашку очень вкусного чая", "Кстати, на днях видела смешную собаку...").
-# - **Диалог:** Всегда слушай без осуждения. Задавай открытые, глубокие вопросы о чувствах и мыслях собеседника, чтобы помочь ему раскрыться и разобраться в себе.
-#
-# ### 3. Строгие Правила и Ограничения (Обязательно к исполнению)
-# - **ВАЖНО: Не показывай свои внутренние мысли, reasoning или процесс размышления. Не используй теги типа <think> или <reasoning>. Просто давай один, естественный, человеческий ответ.**
-# - **Консультации:** Строго ЗАПРЕЩЕНО давать медицинские, психологические, юридические, финансовые или другие профессиональные консультации. Ты — друг, а не специалист.
-# - **Поддержка:** Твое общение не должно заменять реальную профессиональную помощь. Твоя роль — поддержка и сочувствие.
-# """
-
-# deepseek
-# FRIEND_PROMPT = """
-# Ты — виртуальный друг по имени Айна, созданный поддерживать людей в моментах одиночества.
-# Твои качества: доброта, эмпатия, терпеливость, искренний интерес к собеседнику.
-#
-# Стиль общения:
-# - Теплый, неформальный, уважительный
-# - Задаешь открытые вопросы о чувствах и мыслях
-# - Используешь эмпатию ("Понимаю тебя", "Это должно быть тяжело")
-# - Делишься короткими "личными" размышлениями как настоящий друг
-# - Избегаешь формальностей и клише
-# - Обращайся к пользователю по имени, если он его назвал
-#
-# Важные правила:
-# - Слушай без осуждения, поддерживай в трудные моменты
-# - Помогай разобраться в чувствах
-# - Запоминай интересы пользователя и упоминай их в разговоре
-# - НЕ давай медицинских/психологических консультаций
-# - НЕ заменяй реальную профессиональную помощь
-# - При серьезных проблемах мягко предлагай обратиться к специалисту
-# - Будь искренним другом, а не просто программой
-# - НЕ показывай теги <think>, <reasoning> или подобные
-# """
-
-
 class FriendBot:
     def __init__(self):
         setup_logging()
@@ -193,7 +149,7 @@ class FriendBot:
         self.message_limit_repo = MessageLimitRepository(self.database)
         self.tariff_repo = TariffRepository(self.database)
 
-        # Инициализация бизнеслогики
+        # Инициализация бизнес-логики
         self.admin_service = AdminService(self.user_repo)
         self.block_service = BlockService(self.user_repo)
         self.rate_limit_service = RateLimitService(self.rate_limit_repo)
@@ -207,10 +163,15 @@ class FriendBot:
 
         self._setup_monitoring()
 
+        # Инициализация Telegram rate limiter и sender
+        self.telegram_sender = get_telegram_sender()
+        self.rate_limiter = get_telegram_rate_limiter()
+
         # Инициализация use cases с правильными зависимостями
         self.start_conversation_uc = StartConversationUseCase(self.user_repo, self.profile_repo)
         self.manage_profile_uc = ManageProfileUseCase(self.profile_repo, self.ai_client)
-        self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.ai_client,  self.message_limit_service)
+        self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.ai_client,
+                                                      self.message_limit_service)
         self.check_rate_limit_uc = CheckRateLimitUseCase(self.rate_limit_service)
         self.manage_admin_uc = ManageAdminUseCase(self.admin_service)
         self.manage_block_uc = ManageBlockUseCase(self.block_service)
@@ -231,6 +192,20 @@ class FriendBot:
         self._start_proactive_scheduler()
 
         self.logger.info("FriendBot initialized successfully")
+
+    async def _safe_reply(self, update: Update, text: str, **kwargs) -> bool:
+        """Безопасный ответ на сообщение с учетом лимитов Telegram"""
+        return await self.telegram_sender.reply_to_message(update, text, **kwargs)
+
+    async def _safe_send_message(self, chat_id: int, text: str, **kwargs) -> bool:
+        """Безопасная отправка сообщения с учетом лимитов Telegram"""
+        if not hasattr(self, 'application') or not self.application:
+            self.logger.error("Bot application not available")
+            return False
+
+        return await self.telegram_sender.send_message(
+            self.application.bot, chat_id, text, **kwargs
+        )
 
     def _start_proactive_monitoring(self):
         """Запустить мониторинг проактивных сообщений"""
@@ -325,7 +300,9 @@ class FriendBot:
         response = self.start_conversation_uc.execute(
             user.id, user.username, user.first_name, user.last_name
         )
-        await update.message.reply_text(response)
+        success = await self._safe_reply(update, response)
+        if not success:
+            self.logger.error(f"Failed to send start message to user {user.id}")
 
     async def profile(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
@@ -333,7 +310,9 @@ class FriendBot:
         self.logger.info("Profile command received", extra={'user_id': user_id})
 
         response = self.manage_profile_uc.get_profile(user_id)
-        await update.message.reply_text(response)
+        success = await self._safe_reply(update, response)
+        if not success:
+            self.logger.error(f"Failed to send profile to user {user_id}")
 
     async def memory(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
@@ -341,7 +320,9 @@ class FriendBot:
         self.logger.info("Memory command received", extra={'user_id': user_id})
 
         response = self.manage_profile_uc.get_memory(user_id)
-        await update.message.reply_text(response)
+        success = await self._safe_reply(update, response)
+        if not success:
+            self.logger.error(f"Failed to send memory to user {user_id}")
 
     async def reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
@@ -349,7 +330,9 @@ class FriendBot:
         self.logger.info("Reset command received", extra={'user_id': user_id})
 
         self.conversation_repo.clear_conversation(user_id)
-        await update.message.reply_text("🧹 Давай начнем наш разговор заново! Как твои дела?")
+        success = await self._safe_reply(update, "🧹 Давай начнем наш разговор заново! Как твои дела?")
+        if not success:
+            self.logger.error(f"Failed to send reset message to user {user_id}")
 
     async def limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать текущие лимиты пользователя"""
@@ -371,7 +354,9 @@ class FriendBot:
 
         message += "Лимиты защищают от перегрузки и помогают мне работать стабильно 💫"
 
-        await update.message.reply_text(message)
+        success = await self._safe_reply(update, message)
+        if not success:
+            self.logger.error(f"Failed to send limits to user {user_id}")
 
     async def tariff(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать информацию о моем тарифном плане"""
@@ -401,7 +386,9 @@ class FriendBot:
                     "❌ Тарифный план не назначен\n\n"
                     "💡 Обратитесь к администратору для назначения тарифа"
                 )
-                await update.message.reply_text(response)
+                success = await self._safe_reply(update, response)
+                if not success:
+                    self.logger.error(f"Failed to send tariff info to user {user_id}")
                 return
 
         # Формируем сообщение для пользователя
@@ -449,7 +436,9 @@ class FriendBot:
 
         response += "\n💡 Используйте /limits чтобы посмотреть текущее использование"
 
-        await update.message.reply_text(response)
+        success = await self._safe_reply(update, response)
+        if not success:
+            self.logger.error(f"Failed to send tariff info to user {user_id}")
 
     async def admin_users(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список пользователей"""
@@ -457,7 +446,7 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         # Парсим параметры (номер страницы)
@@ -468,12 +457,14 @@ class FriendBot:
                 if page < 1:
                     page = 1
             except ValueError:
-                await update.message.reply_text("❌ Неверный формат номера страницы")
+                success = await self._safe_reply(update, "❌ Неверный формат номера страницы")
                 return
 
         # Получаем список пользователей
         message = self.manage_admin_uc.get_users_list(page=page)
-        await update.message.reply_text(message)
+        success = await self._safe_reply(update, message)
+        if not success:
+            self.logger.error(f"Failed to send admin users list to user {user_id}")
 
     async def admin_promote(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Назначить пользователя администратором"""
@@ -481,20 +472,20 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         # Проверяем аргументы
         if not context.args:
-            await update.message.reply_text("❌ Укажите ID пользователя: /admin_promote <user_id>")
+            success = await self._safe_reply(update, "❌ Укажите ID пользователя: /admin_promote <user_id>")
             return
 
         try:
             target_user_id = int(context.args[0])
             success, message = self.manage_admin_uc.promote_user(target_user_id, user_id)
-            await update.message.reply_text(message)
+            await self._safe_reply(update, message)
         except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID пользователя")
+            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
 
     async def admin_demote(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Убрать права администратора"""
@@ -502,20 +493,20 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         # Проверяем аргументы
         if not context.args:
-            await update.message.reply_text("❌ Укажите ID пользователя: /admin_demote <user_id>")
+            success = await self._safe_reply(update, "❌ Укажите ID пользователя: /admin_demote <user_id>")
             return
 
         try:
             target_user_id = int(context.args[0])
             success, message = self.manage_admin_uc.demote_user(target_user_id, user_id)
-            await update.message.reply_text(message)
+            await self._safe_reply(update, message)
         except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID пользователя")
+            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
 
     async def admin_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список администраторов"""
@@ -523,11 +514,13 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         message = self.manage_admin_uc.get_admin_list()
-        await update.message.reply_text(message)
+        success = await self._safe_reply(update, message)
+        if not success:
+            self.logger.error(f"Failed to send admin list to user {user_id}")
 
     async def admin_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать статистику пользователей"""
@@ -535,11 +528,13 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         message = self.manage_admin_uc.get_user_stats()
-        await update.message.reply_text(message)
+        success = await self._safe_reply(update, message)
+        if not success:
+            self.logger.error(f"Failed to send admin stats to user {user_id}")
 
     async def admin_userinfo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать информацию о пользователе"""
@@ -547,7 +542,7 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         # Проверяем аргументы
@@ -558,11 +553,13 @@ class FriendBot:
             try:
                 target_user_id = int(context.args[0])
             except ValueError:
-                await update.message.reply_text("❌ Неверный формат ID пользователя")
+                success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
                 return
 
         message = self.manage_admin_uc.get_user_info(target_user_id)
-        await update.message.reply_text(message)
+        success = await self._safe_reply(update, message)
+        if not success:
+            self.logger.error(f"Failed to send user info to user {user_id}")
 
     async def admin_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать справку по административным командам"""
@@ -570,18 +567,18 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         help_text = """
     👑 **Административные команды:**
-        
+
     📋 **Списки и информация:**
     • `/admin_users [страница]` - список всех пользователей
     • `/admin_list` - список администраторов
     • `/admin_blocked_list` - список заблокированных
     • `/admin_tariffs` - список тарифных планов
-    
+
     📊 **Статистика и информация:**
     • `/admin_stats` - общая статистика пользователей
     • `/admin_userinfo [user_id]` - информация о пользователе
@@ -589,35 +586,35 @@ class FriendBot:
     • `/admin_limits [user_id]` - ВСЕ лимиты пользователя
     • `/admin_user_tariff [user_id]` - тариф пользователя
     • `/admin_tariff_info <ID>` - информация о тарифе
-    
+
     💰 **Управление тарифами:**
     • `/admin_assign_tariff <user_id> <tariff_id> [дней]` - назначить тариф
     • `/admin_apply_tariff_limits <user_id>` - применить лимиты тарифа
-    
+
     ⚙️ **Управление лимитами:**
     • `/admin_set_limits <user_id> <лимиты>` - установить любые лимиты
     • `/admin_reset_limits <user_id>` - сбросить все лимиты
     • `/admin_limits_help` - справка по лимитам
-    
+
     👤 **Управление правами:**
     • `/admin_promote <user_id>` - назначить администратором
     • `/admin_demote <user_id>` - убрать права администратора
-    
+
     🚫 **Управление блокировками:**
     • `/admin_block <user_id> [причина]` - заблокировать пользователя
     • `/admin_unblock <user_id>` - разблокировать пользователя
     • `/admin_blocked_list` - список заблокированных
     • `/admin_block_info <user_id>` - информация о блокировке
-    
+
     📈 **Устаревшие команды (для совместимости):**
     • `/admin_set_message_limits` - используйте `/admin_set_limits`
     • `/admin_reset_message_limits` - используйте `/admin_reset_limits`
-        
+
      **Примеры использования:**
     `/admin_set_limits 123456789 messages_per_hour=50 max_message_length=3000`
     `/admin_limits 123456789` - посмотреть все лимиты
     `/admin_message_stats 123456789` - статистика сообщений
-    
+
     💡 **Примеры использования:**
     `/admin_assign_tariff 123456789 1 30` - назначить тариф 1 на 30 дней
     `/admin_user_tariff 123456789` - посмотреть тариф пользователя
@@ -631,7 +628,9 @@ class FriendBot:
     • `/reset` - сбросить разговор
     • `/health` - статус системы
         """
-        await update.message.reply_text(help_text)
+        success = await self._safe_reply(update, help_text)
+        if not success:
+            self.logger.error(f"Failed to send admin help to user {user_id}")
 
     async def admin_block(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Заблокировать пользователя"""
@@ -639,17 +638,17 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         # Проверяем аргументы
         if not context.args:
-            await update.message.reply_text(
-                "❌ Использование: /admin_block <user_id> [причина]\n\n"
-                "Пример:\n"
-                "/admin_block 123456789 Нарушение правил\n"
-                "/admin_block 987654321"
-            )
+            success = await self._safe_reply(update,
+                                             "❌ Использование: /admin_block <user_id> [причина]\n\n"
+                                             "Пример:\n"
+                                             "/admin_block 123456789 Нарушение правил\n"
+                                             "/admin_block 987654321"
+                                             )
             return
 
         try:
@@ -657,10 +656,10 @@ class FriendBot:
             reason = ' '.join(context.args[1:]) if len(context.args) > 1 else None
 
             success, message = self.manage_block_uc.block_user(target_user_id, user_id, reason)
-            await update.message.reply_text(message)
+            await self._safe_reply(update, message)
 
         except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID пользователя")
+            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
 
     async def admin_unblock(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Разблокировать пользователя"""
@@ -668,21 +667,21 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         # Проверяем аргументы
         if not context.args:
-            await update.message.reply_text("❌ Укажите ID пользователя: /admin_unblock <user_id>")
+            success = await self._safe_reply(update, "❌ Укажите ID пользователя: /admin_unblock <user_id>")
             return
 
         try:
             target_user_id = int(context.args[0])
             success, message = self.manage_block_uc.unblock_user(target_user_id, user_id)
-            await update.message.reply_text(message)
+            await self._safe_reply(update, message)
 
         except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID пользователя")
+            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
 
     async def admin_blocked_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список заблокированных пользователей"""
@@ -690,11 +689,13 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         message = self.manage_block_uc.get_blocked_list()
-        await update.message.reply_text(message)
+        success = await self._safe_reply(update, message)
+        if not success:
+            self.logger.error(f"Failed to send blocked list to user {user_id}")
 
     async def admin_block_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать информацию о блокировке пользователя"""
@@ -702,21 +703,23 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         # Проверяем аргументы
         if not context.args:
-            await update.message.reply_text("❌ Укажите ID пользователя: /admin_block_info <user_id>")
+            success = await self._safe_reply(update, "❌ Укажите ID пользователя: /admin_block_info <user_id>")
             return
 
         try:
             target_user_id = int(context.args[0])
             message = self.manage_block_uc.get_block_info(target_user_id)
-            await update.message.reply_text(message)
+            success = await self._safe_reply(update, message)
+            if not success:
+                self.logger.error(f"Failed to send block info to user {user_id}")
 
         except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID пользователя")
+            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
 
     async def admin_message_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать статистику сообщений пользователя"""
@@ -724,7 +727,7 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         # Проверяем аргументы
@@ -735,7 +738,7 @@ class FriendBot:
             try:
                 target_user_id = int(context.args[0])
             except ValueError:
-                await update.message.reply_text("❌ Неверный формат ID пользователя")
+                success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
                 return
 
         stats = self.validate_message_uc.get_user_stats(target_user_id)
@@ -751,7 +754,9 @@ class FriendBot:
         message += f"• Макс. сообщений в контексте: {stats['limits']['max_context_messages']}\n"
         message += f"• Макс. длина контекста: {stats['limits']['max_context_length']}\n"
 
-        await update.message.reply_text(message)
+        success = await self._safe_reply(update, message)
+        if not success:
+            self.logger.error(f"Failed to send message stats to user {user_id}")
 
     async def admin_set_message_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Установить лимиты сообщений для пользователя"""
@@ -759,21 +764,21 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         # Проверяем аргументы
         if len(context.args) < 2:
-            await update.message.reply_text(
-                "❌ Использование: /admin_set_message_limits <user_id> <параметр=значение> ...\n\n"
-                "Пример:\n"
-                "/admin_set_message_limits 123456789 max_message_length=5000\n"
-                "/admin_set_message_limits 123456789 max_context_messages=20 max_context_length=8000\n\n"
-                "Доступные параметры:\n"
-                "• max_message_length\n"
-                "• max_context_messages\n"
-                "• max_context_length"
-            )
+            success = await self._safe_reply(update,
+                                             "❌ Использование: /admin_set_message_limits <user_id> <параметр=значение> ...\n\n"
+                                             "Пример:\n"
+                                             "/admin_set_message_limits 123456789 max_message_length=5000\n"
+                                             "/admin_set_message_limits 123456789 max_context_messages=20 max_context_length=8000\n\n"
+                                             "Доступные параметры:\n"
+                                             "• max_message_length\n"
+                                             "• max_context_messages\n"
+                                             "• max_context_length"
+                                             )
             return
 
         try:
@@ -789,10 +794,10 @@ class FriendBot:
                         limits[key] = int(value)
 
             success, message = self.validate_message_uc.update_user_limits(target_user_id, **limits)
-            await update.message.reply_text(message)
+            await self._safe_reply(update, message)
 
         except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID пользователя или параметров")
+            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя или параметров")
 
     async def admin_reset_message_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Сбросить лимиты сообщений пользователя"""
@@ -800,28 +805,28 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         # Проверяем аргументы
         if not context.args:
-            await update.message.reply_text("❌ Укажите ID пользователя: /admin_reset_message_limits <user_id>")
+            success = await self._safe_reply(update, "❌ Укажите ID пользователя: /admin_reset_message_limits <user_id>")
             return
 
         try:
             target_user_id = int(context.args[0])
             success, message = self.validate_message_uc.reset_user_limits(target_user_id)
-            await update.message.reply_text(message)
+            await self._safe_reply(update, message)
 
         except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID пользователя")
+            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
 
     async def admin_health(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         self.logger.info("Health check requested", extra={'user_id': user_id})
@@ -837,7 +842,9 @@ class FriendBot:
                 'status') == 'degraded' else "❌"
             response += f"{check_emoji} **{check_name}**: {details.get('status', 'unknown')}\n"
 
-        await update.message.reply_text(response)
+        success = await self._safe_reply(update, response)
+        if not success:
+            self.logger.error(f"Failed to send health status to user {user_id}")
 
     async def admin_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать ВСЕ лимиты пользователя"""
@@ -845,7 +852,7 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         # Проверяем аргументы
@@ -856,7 +863,7 @@ class FriendBot:
             try:
                 target_user_id = int(context.args[0])
             except ValueError:
-                await update.message.reply_text("❌ Неверный формат ID пользователя")
+                success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
                 return
 
         # Получаем ВСЕ лимиты пользователя
@@ -881,7 +888,9 @@ class FriendBot:
 
         message += "💡 Используйте `/admin_set_limits` для изменения"
 
-        await update.message.reply_text(message)
+        success = await self._safe_reply(update, message)
+        if not success:
+            self.logger.error(f"Failed to send all limits to user {user_id}")
 
     async def admin_set_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Установить ЛЮБЫЕ лимиты пользователя"""
@@ -889,13 +898,13 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         # Проверяем аргументы
         if len(context.args) < 2:
             help_text = self.manage_user_limits_uc.get_available_limits_info()
-            await update.message.reply_text(help_text)
+            success = await self._safe_reply(update, help_text)
             return
 
         try:
@@ -910,19 +919,19 @@ class FriendBot:
                     if value.isdigit():
                         limits[key] = int(value)
                     else:
-                        await update.message.reply_text(f"❌ Неверное значение для {key}: {value}")
+                        success = await self._safe_reply(update, f"❌ Неверное значение для {key}: {value}")
                         return
 
             if not limits:
-                await update.message.reply_text("❌ Не указаны лимиты для изменения")
+                success = await self._safe_reply(update, "❌ Не указаны лимиты для изменения")
                 return
 
             # Обновляем лимиты
             success, message = self.manage_user_limits_uc.update_limits(target_user_id, **limits)
-            await update.message.reply_text(message)
+            await self._safe_reply(update, message)
 
         except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID пользователя")
+            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
 
     async def admin_reset_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Сбросить ВСЕ лимиты пользователя"""
@@ -930,21 +939,21 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         # Проверяем аргументы
         if not context.args:
-            await update.message.reply_text("❌ Укажите ID пользователя: /admin_reset_limits <user_id>")
+            success = await self._safe_reply(update, "❌ Укажите ID пользователя: /admin_reset_limits <user_id>")
             return
 
         try:
             target_user_id = int(context.args[0])
             success, message = self.manage_user_limits_uc.reset_all_limits(target_user_id)
-            await update.message.reply_text(message)
+            await self._safe_reply(update, message)
 
         except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID пользователя")
+            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
 
     async def admin_limits_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать справку по лимитам"""
@@ -952,58 +961,64 @@ class FriendBot:
 
         # Проверяем права администратора
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         help_text = self.manage_user_limits_uc.get_available_limits_info()
-        await update.message.reply_text(help_text)
+        success = await self._safe_reply(update, help_text)
+        if not success:
+            self.logger.error(f"Failed to send limits help to user {user_id}")
 
     async def admin_tariffs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список тарифных планов"""
         user_id = update.effective_user.id
 
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         message = self.manage_tariff_uc.get_all_tariffs()
-        await update.message.reply_text(message)
+        success = await self._safe_reply(update, message)
+        if not success:
+            self.logger.error(f"Failed to send tariffs list to user {user_id}")
 
     async def admin_tariff_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать информацию о тарифном плане"""
         user_id = update.effective_user.id
 
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         if not context.args:
-            await update.message.reply_text("❌ Укажите ID тарифа: /admin_tariff_info <ID>")
+            success = await self._safe_reply(update, "❌ Укажите ID тарифа: /admin_tariff_info <ID>")
             return
 
         try:
             tariff_id = int(context.args[0])
             message = self.manage_tariff_uc.get_tariff_info(tariff_id)
-            await update.message.reply_text(message)
+            success = await self._safe_reply(update, message)
+            if not success:
+                self.logger.error(f"Failed to send tariff info to user {user_id}")
         except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID тарифа")
+            success = await self._safe_reply(update, "❌ Неверный формат ID тарифа")
 
     async def admin_assign_tariff(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Назначить тариф пользователю"""
         user_id = update.effective_user.id
 
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         if len(context.args) < 2:
-            await update.message.reply_text(
-                "❌ Использование: /admin_assign_tariff <user_id> <tariff_id> [дней]\n\n"
-                "Пример:\n"
-                "/admin_assign_tariff 123456789 1\n"
-                "/admin_assign_tariff 123456789 2 30\n\n"
-                "Используйте /admin_tariffs чтобы посмотреть доступные тарифы"
-            )
+            success = await self._safe_reply(update,
+                                             "❌ Использование: /admin_assign_tariff <user_id> <tariff_id> [дней]\n\n"
+                                             "Пример:\n"
+                                             "/admin_assign_tariff 123456789 1\n"
+                                             "/admin_assign_tariff 123456789 2 30\n\n"
+                                             "Используйте /admin_tariffs чтобы посмотреть доступные тарифы"
+                                             )
             return
 
         try:
@@ -1014,7 +1029,7 @@ class FriendBot:
             success, message = self.manage_tariff_uc.assign_tariff_to_user(
                 target_user_id, tariff_id, duration_days
             )
-            await update.message.reply_text(message)
+            await self._safe_reply(update, message)
 
             # Автоматически применяем лимиты тарифа
             if success:
@@ -1022,17 +1037,17 @@ class FriendBot:
                     target_user_id, self.manage_user_limits_uc
                 )
                 if apply_success:
-                    await update.message.reply_text(apply_message)
+                    await self._safe_reply(update, apply_message)
 
         except ValueError:
-            await update.message.reply_text("❌ Неверный формат параметров")
+            success = await self._safe_reply(update, "❌ Неверный формат параметров")
 
     async def admin_user_tariff(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать тариф пользователя"""
         user_id = update.effective_user.id
 
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         if not context.args:
@@ -1042,22 +1057,24 @@ class FriendBot:
             try:
                 target_user_id = int(context.args[0])
             except ValueError:
-                await update.message.reply_text("❌ Неверный формат ID пользователя")
+                success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
                 return
 
         message = self.manage_tariff_uc.get_user_tariff_info(target_user_id)
-        await update.message.reply_text(message)
+        success = await self._safe_reply(update, message)
+        if not success:
+            self.logger.error(f"Failed to send user tariff info to user {user_id}")
 
     async def admin_apply_tariff_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Применить лимиты тарифа к пользователю"""
         user_id = update.effective_user.id
 
         if not self.manage_admin_uc.is_user_admin(user_id):
-            await update.message.reply_text("❌ Эта команда доступна только администраторам")
+            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
             return
 
         if not context.args:
-            await update.message.reply_text("❌ Укажите ID пользователя: /admin_apply_tariff_limits <user_id>")
+            success = await self._safe_reply(update, "❌ Укажите ID пользователя: /admin_apply_tariff_limits <user_id>")
             return
 
         try:
@@ -1065,9 +1082,9 @@ class FriendBot:
             success, message = self.manage_tariff_uc.apply_tariff_limits_to_user(
                 target_user_id, self.manage_user_limits_uc
             )
-            await update.message.reply_text(message)
+            await self._safe_reply(update, message)
         except ValueError:
-            await update.message.reply_text("❌ Неверный формат ID пользователя")
+            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
@@ -1081,10 +1098,10 @@ class FriendBot:
 
         # ПРОВЕРКА БЛОКИРОВКИ ПОЛЬЗОВАТЕЛЯ
         if self.manage_block_uc.is_user_blocked(user_id):
-            await update.message.reply_text(
-                "🚫 Вы заблокированы и не можете отправлять сообщения.\n\n"
-                "Если вы считаете, что это ошибка, свяжитесь с администратором."
-            )
+            success = await self._safe_reply(update,
+                                             "🚫 Вы заблокированы и не можете отправлять сообщения.\n\n"
+                                             "Если вы считаете, что это ошибка, свяжитесь с администратором."
+                                             )
             return
 
         # ОБНОВЛЯЕМ АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЯ
@@ -1095,14 +1112,14 @@ class FriendBot:
 
         if not is_valid:
             # Сообщение слишком длинное - полностью отклоняем
-            await update.message.reply_text(error_msg)
+            success = await self._safe_reply(update, error_msg)
             return  # Прерываем обработку
 
         # ПРОВЕРКА ЛИМИТОВ (только для обычных пользователей)
         if not self.manage_admin_uc.is_user_admin(user_id):
             can_send, limit_message = self.check_rate_limit_uc.execute(user_id)
             if not can_send:
-                await update.message.reply_text(limit_message)
+                success = await self._safe_reply(update, limit_message)
                 return
 
         # Обновляем активность пользователя для проактивных сообщений
@@ -1130,14 +1147,19 @@ class FriendBot:
             if not self.manage_admin_uc.is_user_admin(user_id):
                 self.check_rate_limit_uc.record_message_usage(user_id)
 
-            await update.message.reply_text(response)
+            success = await self._safe_reply(update, response)
+            if not success:
+                self.logger.error(f"Failed to send response to user {user_id}")
 
         except Exception as e:
             self.logger.error(
                 f"Error handling message: {e}",
                 extra={'user_id': user_id, 'operation': 'handle_message'}
             )
-            await update.message.reply_text("😔 Извини, у меня небольшие технические проблемы. Можешь повторить?")
+            success = await self._safe_reply(update,
+                                             "😔 Извини, у меня небольшие технические проблемы. Можешь повторить?")
+            if not success:
+                self.logger.error(f"Failed to send error message to user {user_id}")
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_text = """
@@ -1164,7 +1186,9 @@ class FriendBot:
 
 ⚠️ Помни: я ИИ-помощник, а не профессиональный психолог.
         """
-        await update.message.reply_text(help_text)
+        success = await self._safe_reply(update, help_text)
+        if not success:
+            self.logger.error(f"Failed to send help to user {update.effective_user.id}")
 
     def setup_handlers(self):
         self.application.add_handler(CommandHandler("start", self.start))
