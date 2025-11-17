@@ -141,15 +141,29 @@ class RateLimitService:
 
     def _format_timedelta(self, td: timedelta) -> str:
         """Форматировать timedelta в читаемую строку"""
-        if td.days > 0:
-            return f"{td.days}д {td.seconds // 3600}ч"
-        elif td.seconds >= 3600:
-            hours = td.seconds // 3600
-            minutes = (td.seconds % 3600) // 60
-            return f"{hours}ч {minutes}м"
-        elif td.seconds >= 60:
-            minutes = td.seconds // 60
-            seconds = td.seconds % 60
-            return f"{minutes}м {seconds}с"
+        if not td or td.total_seconds() <= 0:
+            return "сейчас"
+
+        total_seconds = int(td.total_seconds())
+
+        # Для минутного лимита показываем секунды
+        if total_seconds < 60:
+            return f"{total_seconds} сек"
+
+        # Для часового лимита показываем минуты и секунды
+        elif total_seconds < 3600:
+            minutes = total_seconds // 60
+            seconds = total_seconds % 60
+            if seconds > 0:
+                return f"{minutes} мин {seconds} сек"
+            else:
+                return f"{minutes} мин"
+
+        # Для дневного лимита показываем часы и минуты
         else:
-            return f"{td.seconds}с"
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            if minutes > 0:
+                return f"{hours} ч {minutes} мин"
+            else:
+                return f"{hours} ч"
