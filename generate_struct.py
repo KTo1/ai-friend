@@ -2,7 +2,8 @@ import os
 import pathlib
 
 
-def get_project_structure(root_dir=".", output_file="project_structure.txt", exclude_dirs=None):
+def get_project_structure(root_dir=".", output_file="project_structure.txt",
+                          exclude_dirs=None, include_dirs=None):
     """
     Создает текстовый файл со структурой проекта и листингом модулей
 
@@ -10,11 +11,15 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt", exc
         root_dir (str): Корневая директория проекта
         output_file (str): Имя выходного файла
         exclude_dirs (list): Список директорий для исключения
+        include_dirs (list): Список директорий для включения (если None - включаем все)
     """
 
     if exclude_dirs is None:
         # Добавил .github, чтобы исключить стандартные CI/CD папки
         exclude_dirs = ['.git', '__pycache__', '.vscode', '.idea', 'venv', 'env', 'node_modules', '.github']
+
+    if include_dirs is None:
+        include_dirs = ['application', 'presentation']  # Пустой список означает "включать всё"
 
     root_path = pathlib.Path(root_dir)
     # Определяем типы файлов, для которых будем выводить содержимое и отображать в структуре
@@ -26,6 +31,13 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt", exc
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write("=" * 60 + "\n")
         f.write("📁 СТРУКТУРА ПРОЕКТА И ЛИСТИНГ МОДУЛЕЙ\n")
+        f.write("=" * 60 + "\n")
+
+        # Добавляем информацию о фильтрах
+        if include_dirs:
+            f.write(f"ВКЛЮЧЕНЫ ПАПКИ: {', '.join(include_dirs)}\n")
+        if exclude_dirs:
+            f.write(f"ИСКЛЮЧЕНЫ ПАПКИ: {', '.join(exclude_dirs)}\n")
         f.write("=" * 60 + "\n\n")
 
         # Собираем структуру и файлы для листинга
@@ -39,6 +51,27 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt", exc
             # Игнорируем сам выходной файл
             if file_path.name == output_file:
                 continue
+
+            # Фильтрация по включаемым папкам
+            if include_dirs:
+                # Проверяем, находится ли файл в одной из включаемых папок
+                is_included = False
+                for include_dir in include_dirs:
+                    include_path = root_path / include_dir
+                    try:
+                        if include_path in file_path.parents or file_path == include_path:
+                            is_included = True
+                            break
+                    except ValueError:
+                        # Может возникнуть если пути на разных дисках
+                        continue
+
+                # Также включаем корневые файлы
+                if file_path.parent == root_path:
+                    is_included = True
+
+                if not is_included:
+                    continue
 
             relative_path = file_path.relative_to(root_path)
 
@@ -87,11 +120,29 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt", exc
     print(f"✅ Структура проекта сохранена в: {output_file}")
     print(f"📊 Найдено файлов для листинга: {len(files_to_list)}")
 
+    # Информация о примененных фильтрах
+    if include_dirs:
+        print(f"📁 Включены папки: {', '.join(include_dirs)}")
+    if exclude_dirs:
+        print(f"🚫 Исключены папки: {', '.join(exclude_dirs)}")
+
 
 if __name__ == "__main__":
-    # Создаем полную версию с кодом
+    # Примеры использования:
+
+    # 1. Полная версия (все файлы)
+    print("Создание полной версии...")
     get_project_structure(".", "project_structure_full.txt")
 
+    # 2. Только определенные папки
+    print("\nСоздание версии с фильтром папок...")
+    get_project_structure(
+        ".",
+        "project_structure_filtered.txt",
+        include_dirs=["src", "config", "docs"]  # Укажите нужные папки
+    )
+
     print("\n🎯 Теперь вы можете отправить мне:")
-    print("   • project_structure_full.txt - если нужен полный код (включая yml, json, env и т.д.)")
+    print("   • project_structure_full.txt - если нужен полный код")
+    print("   • project_structure_filtered.txt - отфильтрованная версия")
     print("\n💡 Рекомендую начать с компактной версии, чтобы не перегружать меня!")
