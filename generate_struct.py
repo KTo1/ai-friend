@@ -19,7 +19,7 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt",
         exclude_dirs = ['.git', '__pycache__', '.vscode', '.idea', 'venv', 'env', 'node_modules', '.github']
 
     if include_dirs is None:
-        include_dirs = ['application', 'presentation']  # Пустой список означает "включать всё"
+        include_dirs = []  # Пустой список означает "включать всё"
 
     root_path = pathlib.Path(root_dir)
     # Определяем типы файлов, для которых будем выводить содержимое и отображать в структуре
@@ -139,7 +139,7 @@ if __name__ == "__main__":
     get_project_structure(
         ".",
         "project_structure_filtered.txt",
-        include_dirs=["src", "config", "docs"]  # Укажите нужные папки
+        include_dirs=['application', 'presentation']  # Укажите нужные папки
     )
 
     print("\n🎯 Теперь вы можете отправить мне:")
