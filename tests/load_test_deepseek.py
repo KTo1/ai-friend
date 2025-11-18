@@ -14,7 +14,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 class DeepSeekLoadTester:
     def __init__(self, total_users: int = 50, messages_per_second: int = 1):
         self.total_users = total_users
-        self.messages_per_second = messages_per_second
+        self.target_messages_per_second = messages_per_second
         self.results = {
             'successful': 0,
             'failed': 0,
@@ -23,9 +23,14 @@ class DeepSeekLoadTester:
             'total_messages': 0,
             'start_time': None,
             'end_time': None,
-            'response_times': [],  # Добавляем сбор времени ответов
-            'processing_times': []  # Общее время обработки
+            'response_times': [],
+            'processing_times': [],
+            'concurrent_requests': 0,
+            'max_concurrent': 0
         }
+
+        # Семафор для ограничения параллелизма (защита от перегрузки)
+        self.semaphore = asyncio.Semaphore(50)  # Макс 50 одновременных запросов
 
         # Устанавливаем DeepSeek как провайдера
         os.environ['AI_PROVIDER'] = 'deepseek'
@@ -120,100 +125,114 @@ class DeepSeekLoadTester:
 
     async def process_user_message(self, user_id: int, message_text: str):
         """Обработка сообщения пользователя с DeepSeek"""
-        try:
-            start_time = time.time()
-            ai_response_time = None
-
-            # 1. Проверка блокировки
-            if self.block_service.is_user_blocked(user_id):
-                self.results['failed'] += 1
-                print(f"❌ User {user_id}: Blocked")
-                return False
-
-            # 2. Проверка rate limiting
-            can_send, rate_limit_msg = self.check_rate_limit_uc.execute(user_id)
-            if not can_send:
-                self.results['rate_limited'] += 1
-                print(f"⏰ User {user_id}: Rate limited")
-                return False
-
-            # 3. Валидация сообщения
-            is_valid, validation_msg = self.validate_message_uc.execute(user_id, message_text)
-            if not is_valid:
-                self.results['failed'] += 1
-                print(f"❌ User {user_id}: Message validation failed")
-                return False
-
-            # 4. Обновляем активность
-            self.user_repo.update_last_seen(user_id)
-
-            # 5. Извлекаем профиль (быстро, без глубокого анализа)
+        async with self.semaphore:  # Ограничиваем параллелизм
             try:
-                name, age, interests, mood = await self.manage_profile_uc.extract_and_update_profile(
-                    user_id, message_text
+                # Мониторинг параллельных запросов
+                self.results['concurrent_requests'] += 1
+                self.results['max_concurrent'] = max(
+                    self.results['max_concurrent'],
+                    self.results['concurrent_requests']
                 )
-            except:
-                # Игнорируем ошибки извлечения профиля для тестов
-                pass
 
-            # 6. Упрощенный системный промпт для тестов
-            system_prompt = "Ты — Айна, дружелюбный ассистент. Отвечай кратко (1-2 предложения)."
+                start_time = time.time()
+                ai_response_time = None
 
-            # 7. Обрабатываем сообщение через DeepSeek
-            profile_data = self.profile_repo.get_profile(user_id)
+                # 1. Проверка блокировки
+                if self.block_service.is_user_blocked(user_id):
+                    self.results['failed'] += 1
+                    self.results['total_messages'] += 1
+                    print(f"❌ User {user_id}: Blocked")
+                    return False
 
-            try:
-                # Замеряем время именно AI ответа
-                ai_start_time = time.time()
-                response = await self.handle_message_uc.execute(
-                    user_id, message_text, system_prompt, profile_data
-                )
-                ai_response_time = time.time() - ai_start_time
+                # 2. Проверка rate limiting
+                can_send, rate_limit_msg = self.check_rate_limit_uc.execute(user_id)
+                if not can_send:
+                    self.results['rate_limited'] += 1
+                    self.results['total_messages'] += 1
+                    print(f"⏰ User {user_id}: Rate limited")
+                    return False
 
-                # Сохраняем время ответа AI
-                self.results['response_times'].append(ai_response_time)
+                # 3. Валидация сообщения
+                is_valid, validation_msg = self.validate_message_uc.execute(user_id, message_text)
+                if not is_valid:
+                    self.results['failed'] += 1
+                    self.results['total_messages'] += 1
+                    print(f"❌ User {user_id}: Message validation failed")
+                    return False
 
-                # Проверяем что ответ не пустой
-                if not response or len(response.strip()) < 5:
-                    raise Exception("Empty AI response")
+                # 4. Обновляем активность
+                self.user_repo.update_last_seen(user_id)
 
-            except Exception as ai_error:
-                self.results['ai_errors'] += 1
-                print(f"🤖 User {user_id}: AI Error - {str(ai_error)}")
-                # Fallback ответ
-                response = "Привет! Как твои дела? 😊"
+                # 5. Извлекаем профиль (быстро, без глубокого анализа)
+                try:
+                    name, age, interests, mood = await self.manage_profile_uc.extract_and_update_profile(
+                        user_id, message_text
+                    )
+                except:
+                    # Игнорируем ошибки извлечения профиля для тестов
+                    pass
 
-            # 8. Записываем использование сообщения
-            self.check_rate_limit_uc.record_message_usage(user_id)
+                # 6. Упрощенный системный промпт для тестов
+                system_prompt = "Ты — Айна, дружелюбный ассистент. Отвечай кратко (1-2 предложения)."
 
-            processing_time = time.time() - start_time
-            self.results['processing_times'].append(processing_time)
+                # 7. Обрабатываем сообщение через DeepSeek
+                profile_data = self.profile_repo.get_profile(user_id)
 
-            self.results['successful'] += 1
-            self.results['total_messages'] += 1
+                try:
+                    # Замеряем время именно AI ответа
+                    ai_start_time = time.time()
+                    response = await self.handle_message_uc.execute(
+                        user_id, message_text, system_prompt, profile_data
+                    )
+                    ai_response_time = time.time() - ai_start_time
 
-            # Выводим информацию о времени
-            time_info = f"({processing_time:.2f}s total"
-            if ai_response_time is not None:
-                time_info += f", {ai_response_time:.2f}s AI"
-            time_info += ")"
+                    # Сохраняем время ответа AI
+                    self.results['response_times'].append(ai_response_time)
 
-            print(f"✅ User {user_id}: '{message_text}' → {time_info}")
+                    # Проверяем что ответ не пустой
+                    if not response or len(response.strip()) < 5:
+                        raise Exception("Empty AI response")
 
-            return True
+                except Exception as ai_error:
+                    self.results['ai_errors'] += 1
+                    print(f"🤖 User {user_id}: AI Error - {str(ai_error)}")
+                    # Fallback ответ
+                    response = "Привет! Как твои дела? 😊"
 
-        except Exception as e:
-            self.results['failed'] += 1
-            self.results['total_messages'] += 1
-            print(f"❌ User {user_id}: Error - {str(e)}")
-            return False
+                # 8. Записываем использование сообщения
+                self.check_rate_limit_uc.record_message_usage(user_id)
+
+                processing_time = time.time() - start_time
+                self.results['processing_times'].append(processing_time)
+
+                self.results['successful'] += 1
+                self.results['total_messages'] += 1
+
+                # Выводим информацию о времени
+                time_info = f"({processing_time:.2f}s total"
+                if ai_response_time is not None:
+                    time_info += f", {ai_response_time:.2f}s AI"
+                time_info += ")"
+
+                print(f"✅ User {user_id}: '{message_text}' → {time_info}")
+
+                return True
+
+            except Exception as e:
+                self.results['failed'] += 1
+                self.results['total_messages'] += 1
+                print(f"❌ User {user_id}: Error - {str(e)}")
+                return False
+            finally:
+                self.results['concurrent_requests'] -= 1
 
     async def run_load_test(self, duration_seconds: int = 60):
-        """Запуск нагрузочного теста с DeepSeek"""
+        """Запуск нагрузочного теста с DeepSeek - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
         print(f"🚀 Starting DeepSeek Load Test")
-        print(f"📊 Users: {self.total_users}, Messages/sec: {self.messages_per_second}")
+        print(f"📊 Users: {self.total_users}, Target Messages/sec: {self.target_messages_per_second}")
         print(f"⏱️ Duration: {duration_seconds}s")
         print(f"🤖 AI Provider: DeepSeek")
+        print(f"🔒 Max Concurrent: {self.semaphore._value}")
         print("=" * 60)
 
         try:
@@ -227,42 +246,73 @@ class DeepSeekLoadTester:
 
             self.results['start_time'] = datetime.now().isoformat()
             start_time = time.time()
-            tasks = []
+            all_tasks = []
 
             # Создаем тестовых пользователей в базе
             await self._create_test_users()
 
+            # Рассчитываем сколько сообщений создавать каждую секунду
+            expected_total_messages = self.target_messages_per_second * duration_seconds
+            print(f"🎯 Expected total messages: {expected_total_messages}")
+
             for second in range(duration_seconds):
-                print(f"⏱️ Second {second + 1}/{duration_seconds}")
+                print(
+                    f"⏱️ Second {second + 1}/{duration_seconds} - Creating {self.target_messages_per_second} messages...")
 
                 # Создаем задачи для текущей секунды
-                for user_offset in range(self.messages_per_second):
-                    user_id = (second * self.messages_per_second + user_offset) % self.total_users + 1
+                second_tasks = []
+                for _ in range(self.target_messages_per_second):
+                    # Случайный пользователь из общего пула
+                    user_id = random.randint(1, self.total_users)
                     message_text = random.choice(self.test_messages)
 
                     task = asyncio.create_task(
                         self.process_user_message(user_id, message_text)
                     )
-                    tasks.append(task)
+                    second_tasks.append(task)
+                    all_tasks.append(task)
 
-                # Поддерживаем точную частоту
+                # Ждем до конца текущей секунды
                 elapsed = time.time() - start_time
                 wait_time = max(0, (second + 1) - elapsed)
-                await asyncio.sleep(wait_time)
+                if wait_time > 0:
+                    await asyncio.sleep(wait_time)
 
-            # Ожидаем завершения всех задач
-            await asyncio.gather(*tasks, return_exceptions=True)
+                # Выводим прогресс
+                completed_this_second = sum(1 for task in second_tasks if task.done())
+                print(f"   📈 Completed this second: {completed_this_second}/{self.target_messages_per_second}")
+
+            print("🔄 Waiting for all tasks to complete...")
+
+            # Ожидаем завершения всех задач с таймаутом
+            if all_tasks:
+                done, pending = await asyncio.wait(all_tasks, timeout=30.0, return_when=asyncio.ALL_COMPLETED)
+
+                if pending:
+                    print(f"⚠️  {len(pending)} tasks timed out, cancelling...")
+                    for task in pending:
+                        task.cancel()
 
             self.results['end_time'] = datetime.now().isoformat()
             total_duration = time.time() - start_time
+
+            # Рассчитываем реальную скорость
+            if total_duration > 0:
+                self.results['actual_messages_per_second'] = self.results['total_messages'] / total_duration
+            else:
+                self.results['actual_messages_per_second'] = 0
+
             self.results['total_duration'] = total_duration
-            self.results['messages_per_second'] = self.results['total_messages'] / total_duration
 
             # Рассчитываем статистику времени
             self._calculate_time_stats()
 
             self._print_results()
 
+        except Exception as e:
+            print(f"❌ Error during load test: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             # Всегда очищаем ресурсы
             await self._cleanup()
@@ -273,8 +323,11 @@ class DeepSeekLoadTester:
             self.results['avg_response_time'] = mean(self.results['response_times'])
             self.results['min_response_time'] = min(self.results['response_times'])
             self.results['max_response_time'] = max(self.results['response_times'])
-            self.results['response_time_95'] = sorted(self.results['response_times'])[
-                int(len(self.results['response_times']) * 0.95)]
+            if len(self.results['response_times']) > 1:
+                self.results['response_time_95'] = sorted(self.results['response_times'])[
+                    int(len(self.results['response_times']) * 0.95)]
+            else:
+                self.results['response_time_95'] = self.results['response_times'][0]
         else:
             self.results['avg_response_time'] = 0
             self.results['min_response_time'] = 0
@@ -285,8 +338,11 @@ class DeepSeekLoadTester:
             self.results['avg_processing_time'] = mean(self.results['processing_times'])
             self.results['min_processing_time'] = min(self.results['processing_times'])
             self.results['max_processing_time'] = max(self.results['processing_times'])
-            self.results['processing_time_95'] = sorted(self.results['processing_times'])[
-                int(len(self.results['processing_times']) * 0.95)]
+            if len(self.results['processing_times']) > 1:
+                self.results['processing_time_95'] = sorted(self.results['processing_times'])[
+                    int(len(self.results['processing_times']) * 0.95)]
+            else:
+                self.results['processing_time_95'] = self.results['processing_times'][0]
         else:
             self.results['avg_processing_time'] = 0
             self.results['min_processing_time'] = 0
@@ -319,7 +375,7 @@ class DeepSeekLoadTester:
 
     async def _create_test_users(self):
         """Создание тестовых пользователей в базе"""
-        print("👥 Creating test users...")
+        print(f"👥 Creating {self.total_users} test users...")
         from domain.entity.user import User
 
         for user_id in range(1, self.total_users + 1):
@@ -410,14 +466,15 @@ class DeepSeekLoadTester:
         print("📊 DEEPSEEK LOAD TEST RESULTS")
         print("=" * 60)
         print(f"Total Users: {self.total_users}")
-        print(f"Target Messages/Sec: {self.messages_per_second}")
-        print(f"Actual Messages/Sec: {self.results['messages_per_second']:.2f}")
+        print(f"Target Messages/Sec: {self.target_messages_per_second}")
+        print(f"Actual Messages/Sec: {self.results['actual_messages_per_second']:.2f}")
         print(f"Total Duration: {self.results['total_duration']:.2f}s")
         print(f"Total Messages: {self.results['total_messages']}")
         print(f"Successful: {self.results['successful']}")
         print(f"Rate Limited: {self.results['rate_limited']}")
         print(f"AI Errors: {self.results['ai_errors']}")
         print(f"Failed: {self.results['failed']}")
+        print(f"Max Concurrent Requests: {self.results['max_concurrent']}")
 
         if self.results['total_messages'] > 0:
             success_rate = (self.results['successful'] / self.results['total_messages']) * 100
@@ -442,6 +499,11 @@ class DeepSeekLoadTester:
         else:
             print("No response time data available")
 
+        # Ожидаемые vs фактические сообщения
+        expected_messages = self.target_messages_per_second * self.results['total_duration']
+        efficiency = (self.results['total_messages'] / expected_messages) * 100 if expected_messages > 0 else 0
+        print(f"\n🎯 Efficiency: {efficiency:.1f}% of target message rate")
+
         # Сохраняем результаты
         filename = f"deepseek_load_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         with open(filename, 'w') as f:
@@ -458,13 +520,19 @@ async def main():
         print("💡 Add to your .env file: DEEPSEEK_API_KEY=your_key_here")
         return
 
-    # Сценарии тестирования (осторожные для DeepSeek)
+    # РЕАЛИСТИЧНЫЕ сценарии тестирования
     scenarios = [
-        {"users": 5, "messages_per_second": 1, "duration": 30},
+        # Базовый тест - проверка функциональности
         # {"users": 10, "messages_per_second": 1, "duration": 30},
-        # {"users": 20, "messages_per_second": 1, "duration": 30},
-        # {"users": 30, "messages_per_second": 1, "duration": 30},
-        # {"users": 10, "messages_per_second": 2, "duration": 20},  # Более агрессивный
+
+        # # Тест средней нагрузки
+        # {"users": 50, "messages_per_second": 2, "duration": 30},
+        #
+        # # Тест высокой нагрузки (осторожно!)
+         {"users": 100, "messages_per_second": 5, "duration": 20},
+
+        # # ОЧЕНЬ агрессивный тест (скорее всего упрется в лимиты DeepSeek)
+        # {"users": 200, "messages_per_second": 10, "duration": 15},
     ]
 
     for scenario in scenarios:
@@ -480,10 +548,13 @@ async def main():
             await tester.run_load_test(duration_seconds=scenario['duration'])
         except Exception as e:
             print(f"❌ Error during test scenario: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             # Пауза между сценариями (чтобы не превысить лимиты DeepSeek)
-            print("💤 Waiting 10 seconds before next scenario...")
-            await asyncio.sleep(10)
+            if scenario != scenarios[-1]:  # Не ждать после последнего сценария
+                print("💤 Waiting 10 seconds before next scenario...")
+                await asyncio.sleep(10)
 
 
 if __name__ == "__main__":
@@ -503,5 +574,8 @@ if __name__ == "__main__":
         print("\n🛑 Load test interrupted by user")
     except Exception as e:
         print(f"\n💥 Unexpected error: {e}")
+        import traceback
+
+        traceback.print_exc()
     finally:
         print("🏁 Load test finished")

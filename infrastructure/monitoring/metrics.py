@@ -53,6 +53,23 @@ class MetricsCollector:
             buckets=[1, 2, 5, 10, 20, 50]
         )
 
+        # Метрики для Telegram rate limiting
+        self.telegram_send_metrics = Counter(
+            'telegram_messages_sent_total',
+            'Total number of messages sent to Telegram',
+            ['status']
+        )
+
+        self.telegram_rate_limit_hits = Counter(
+            'telegram_rate_limit_hits_total',
+            'Total number of Telegram rate limit hits'
+        )
+
+        self.telegram_retry_attempts = Counter(
+            'telegram_retry_attempts_total',
+            'Total number of Telegram retry attempts'
+        )
+
     def start_metrics_server(self):
         """Запустить сервер метрик"""
         if self._server_started:
@@ -89,6 +106,30 @@ class MetricsCollector:
 
     def record_conversation_length(self, length: int):
         self.conversation_length.observe(length)
+
+    # Метрики для Telegram rate limiting
+    def record_telegram_send(self, status: str = "success"):
+        """Записать метрику отправки Telegram сообщения"""
+        self.telegram_send_metrics.labels(status=status).inc()
+
+    def record_telegram_rate_limit_hit(self):
+        """Записать попадание в лимит Telegram"""
+        self.telegram_rate_limit_hits.inc()
+
+    def record_telegram_retry(self):
+        """Записать повторную попытку отправки в Telegram"""
+        self.telegram_retry_attempts.inc()
+
+    def get_telegram_metrics(self) -> Dict[str, Any]:
+        """Получить метрики Telegram для отладки"""
+        return {
+            'sent_success': self.telegram_send_metrics.labels(status='success')._value.get(),
+            'sent_rate_limit_exceeded': self.telegram_send_metrics.labels(status='rate_limit_exceeded')._value.get(),
+            'sent_retry_after': self.telegram_send_metrics.labels(status='retry_after')._value.get(),
+            'sent_timeout': self.telegram_send_metrics.labels(status='timeout')._value.get(),
+            'rate_limit_hits': self.telegram_rate_limit_hits._value.get(),
+            'retry_attempts': self.telegram_retry_attempts._value.get()
+        }
 
 
 class Timer:
