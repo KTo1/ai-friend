@@ -188,9 +188,6 @@ class FriendBot:
         # Инициализация проактивных сообщений
         self.proactive_manager = None
 
-        # Запускаем планировщик проактивных сообщений
-        self._start_proactive_scheduler()
-
         self.logger.info("FriendBot initialized successfully")
 
     async def _safe_reply(self, update: Update, text: str, **kwargs) -> bool:
@@ -228,24 +225,6 @@ class FriendBot:
         thread = threading.Thread(target=start_async_monitoring, daemon=True)
         thread.start()
         self.logger.info("Proactive messages monitoring started")
-
-    def _start_proactive_scheduler(self):
-        """Запустить планировщик проактивных сообщений"""
-        import threading
-        import time
-
-        def proactive_worker():
-            while True:
-                try:
-                    self._check_proactive_messages()
-                    time.sleep(60)  # Проверять каждую минуту
-                except Exception as e:
-                    self.logger.error(f"Proactive scheduler error: {e}")
-                    time.sleep(300)  # Подождать 5 минут при ошибке
-
-        thread = threading.Thread(target=proactive_worker, daemon=True)
-        thread.start()
-        self.logger.info("Proactive message scheduler started")
 
     def _check_proactive_messages(self):
         """Проверить и отправить проактивные сообщения"""
