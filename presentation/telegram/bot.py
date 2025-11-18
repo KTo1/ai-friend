@@ -195,7 +195,16 @@ class FriendBot:
 
     async def _safe_reply(self, update: Update, text: str, **kwargs) -> bool:
         """Безопасный ответ на сообщение с учетом лимитов Telegram"""
-        return await self.telegram_sender.reply_to_message(update, text, **kwargs)
+        if not hasattr(self, 'application') or not self.application:
+            self.logger.error("Bot application not available")
+            return False
+
+        return await self.telegram_sender.reply_to_message(
+            bot=self.application.bot,  # ДОБАВЛЕНО: явно передаем бота
+            update=update,
+            text=text,
+            **kwargs
+        )
 
     async def _safe_send_message(self, chat_id: int, text: str, **kwargs) -> bool:
         """Безопасная отправка сообщения с учетом лимитов Telegram"""

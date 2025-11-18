@@ -461,7 +461,9 @@ async def main():
     # Сценарии тестирования (осторожные для DeepSeek)
     scenarios = [
         {"users": 5, "messages_per_second": 1, "duration": 30},
-        # {"users": 10, "messages_per_second": 1, "duration": 30},
+        {"users": 10, "messages_per_second": 1, "duration": 30},
+        {"users": 100, "messages_per_second": 1, "duration": 30},
+        {"users": 1000, "messages_per_second": 1, "duration": 30},
         # {"users": 20, "messages_per_second": 1, "duration": 30},
         # {"users": 30, "messages_per_second": 1, "duration": 30},
         # {"users": 10, "messages_per_second": 2, "duration": 20},  # Более агрессивный

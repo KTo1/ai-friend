@@ -112,6 +112,7 @@ class TelegramMessageSender:
 
     async def reply_to_message(
         self,
+        bot: Bot,  # ДОБАВЛЕНО: явно передаем бота
         update: Update,
         text: str,
         parse_mode: Optional[str] = None,
@@ -123,7 +124,7 @@ class TelegramMessageSender:
             return False
 
         return await self.send_message(
-            bot=update.message.bot,
+            bot=bot,  # ИСПРАВЛЕНО: используем переданного бота
             chat_id=update.message.chat_id,
             text=text,
             parse_mode=parse_mode,
