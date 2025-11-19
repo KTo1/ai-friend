@@ -33,7 +33,7 @@ class TariffRepository:
                 message_limits=MessageLimitConfig(max_message_length=100, max_context_messages=3,
                                                   max_context_length=1200),
                 is_default=True,
-                features={'ai_providers': ['ollama'], 'support': 'basic'}
+                features={'support': 'basic'}
             ),
             TariffPlan(
                 id=0,
@@ -41,9 +41,9 @@ class TariffRepository:
                 description='Популярный тариф для активных пользователей',
                 price=699,
                 rate_limits=RateLimitConfig(messages_per_minute=10, messages_per_hour=100, messages_per_day=500),
-                message_limits=MessageLimitConfig(max_message_length=2000, max_context_messages=10,
-                                                  max_context_length=4000),
-                features={'ai_providers': ['ollama', 'deepseek'], 'support': 'priority'}
+                message_limits=MessageLimitConfig(max_message_length=500, max_context_messages=10,
+                                                  max_context_length=2400),
+                features={'support': 'priority'}
             ),
             TariffPlan(
                 id=0,
@@ -53,7 +53,7 @@ class TariffRepository:
                 rate_limits=RateLimitConfig(messages_per_minute=20, messages_per_hour=200, messages_per_day=1000),
                 message_limits=MessageLimitConfig(max_message_length=5000, max_context_messages=20,
                                                   max_context_length=8000),
-                features={'ai_providers': ['ollama', 'deepseek', 'openai'], 'support': '24/7'}
+                features={'support': '24/7'}
             )
         ]
 
