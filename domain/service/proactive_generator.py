@@ -66,7 +66,7 @@ class ProactiveMessageGenerator:
             # ВЫЗОВ LLM ДЛЯ ГЕНЕРАЦИИ СООБЩЕНИЯ
             response = await self.ai_client.generate_response_safe(
                 messages,
-                max_tokens=150,  # лимит для проактива
+                max_tokens=250,  # лимит для проактива
                 temperature=0.9  # побольше креативности
             )
 
