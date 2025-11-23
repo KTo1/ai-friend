@@ -136,6 +136,8 @@ class ProactiveMessageGenerator:
 - Не повторяй одни и те же формулировки
 - Избегай шаблонных вопросов"""
 
+        return base_prompt
+
     def _build_user_prompt(self, trigger: ProactiveTrigger, profile: UserProfile, context: List[Dict]) -> str:
         """Построить пользовательскую подсказку (кратко)"""
         name = profile.name if profile and profile.name else ""
