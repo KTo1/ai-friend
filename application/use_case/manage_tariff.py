@@ -20,26 +20,12 @@ class ManageTariffUseCase:
         if not tariffs:
             return "📋 Список тарифных планов пуст"
 
-        message = "📋 **Доступные тарифные планы:**\n\n"
+        message = ""
 
         for i, tariff in enumerate(tariffs, 1):
-            message += f"{i}. **{tariff.name}** - {tariff.price} руб./месяц\n"
-            message += f"   📝 {tariff.description}\n"
-            message += f"   🕒 Лимиты: {tariff.rate_limits.messages_per_day}/день, "
-            message += f"{tariff.message_limits.max_message_length} символов\n"
+            message = message + self.tariff_service.get_tariff_info(tariff.id) + "\n\n"
 
-            if tariff.is_default:
-                message += "   ⭐ Тариф по умолчанию\n"
-
-            message += f"   🆔 ID: {tariff.id}\n\n"
-
-        message += "💡 Используйте `/admin_tariff_info <ID>` для подробной информации"
         return message
-
-    @trace_span("usecase.get_tariff_info", attributes={"component": "application"})
-    def get_tariff_info(self, tariff_plan_id: int) -> str:
-        """Получить подробную информацию о тарифном плане"""
-        return self.tariff_service.get_tariff_info(tariff_plan_id)
 
     @trace_span("usecase.assign_tariff", attributes={"component": "application"})
     def assign_tariff_to_user(self, user_id: int, tariff_plan_id: int,

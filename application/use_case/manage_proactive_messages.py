@@ -1,4 +1,6 @@
+# application/use_case/manage_proactive_messages.py
 import asyncio
+import random
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from domain.entity.proactive_message import UserActivity, ProactiveTrigger
@@ -13,6 +15,16 @@ from config.settings import config
 
 
 class ProactiveMessageManager:
+    """
+    Улучшенный менеджер проактивных сообщений.
+
+    Что изменено:
+    - sent_today -> хранит список времен отправок (чтобы корректно считать до max_messages_per_day)
+    - добавлена дедупликация по содержимому (использует кеш генератора и проверку перед отправкой)
+    - добавлен лёгкий jitter (случайная пауза до отправки), чтобы избежать точных совпадений в одну минуту
+    - гарантируем, что _check_proactive_messages асинхронный loop — выключаем синхронный scheduler в основном боте (см. инструкцию)
+    """
+
     def __init__(self,
                  proactive_repo: ProactiveRepository,
                  profile_repo: ProfileRepository,
@@ -36,11 +48,17 @@ class ProactiveMessageManager:
         # Хранилище активности пользователей
         self.user_activities: Dict[int, UserActivity] = {}
 
-        # Защита от дублирования
-        self.sent_today: Dict[int, datetime] = {}
+        # Защита от дублирования: теперь хранит список времен отправок (per-day) и последние тексты
+        # sent_today: user_id -> list[datetime]
+        self.sent_today: Dict[int, List[datetime]] = {}
+        # last_sent_texts: user_id -> list[str] (последние N текстов для дедупа)
+        self.last_sent_texts: Dict[int, List[str]] = {}
+
+        # Максимум последних текстов для хранения
+        self._LAST_TEXTS_KEEP = 5
 
     async def start_monitoring(self):
-        """Запустить мониторинг активности пользователей"""
+        """Запустить мониторинг активности пользователей (асинхронно)"""
         self.logger.info(f"Starting proactive messages monitoring ({self.check_interval}s checks)")
 
         while True:
@@ -76,7 +94,7 @@ class ProactiveMessageManager:
         # Сохраняем в базу
         self.proactive_repo.save_activity(activity)
 
-        self.logger.info(f"Updated activity for user {user_id}: {activity.message_count} messages")
+        self.logger.debug(f"Updated activity for user {user_id}: {activity.message_count} messages")
 
     async def _check_proactive_messages(self):
         """Проверить и отправить проактивные сообщения"""
@@ -86,31 +104,31 @@ class ProactiveMessageManager:
         # Очищаем кэш отправленных за вчерашний день
         self._cleanup_sent_cache(current_time)
 
-        self.logger.info(f"Checking proactive messages for {len(self.user_activities)} users")
+        self.logger.debug(f"Checking proactive messages for {len(self.user_activities)} users")
 
+        # Перебираем копию списка пользователей
         for user_id, activity in list(self.user_activities.items()):
             try:
                 # Пропускаем если уже отправили максимальное количество сегодня
                 if self._has_reached_daily_limit(user_id, current_time):
+                    self.logger.debug(f"User {user_id}: reached daily limit")
                     continue
 
                 # Проверяем минимальное количество сообщений для активации
                 if activity.message_count < config.proactive.min_messages_for_activation:
-                    self.logger.info(f"👤 User {user_id}: not enough messages ({activity.message_count})")
+                    self.logger.debug(f"User {user_id}: not enough messages ({activity.message_count})")
                     continue
 
                 # Логируем статистику
                 time_since_last = current_time - activity.last_message_time
                 last_proactive = activity.last_proactive_time or "Never"
 
-                self.logger.info(
-                    f"👤 User {user_id}: "
-                    f"messages={activity.message_count}, "
-                    f"last_activity={time_since_last.total_seconds() / 3600:.1f}h ago, "
-                    f"last_proactive={last_proactive}"
+                self.logger.debug(
+                    f"User {user_id}: messages={activity.message_count}, "
+                    f"last_activity={time_since_last.total_seconds()/3600:.1f}h, last_proactive={last_proactive}"
                 )
 
-                # Проверяем триггеры
+                # Проверяем триггеры (раньше порядок: morning, evening, inactivity, follow_up)
                 triggers_to_check = [
                     ProactiveTrigger.MORNING_GREETING,
                     ProactiveTrigger.EVENING_CHECK,
@@ -120,10 +138,17 @@ class ProactiveMessageManager:
 
                 for trigger in triggers_to_check:
                     if activity.should_send_proactive(trigger):
-                        success = await self._send_proactive_message(user_id, activity, trigger)
+                        # Добавляем небольшой jitter — чтобы не отправлять все сообщения точно в 07:00/19:00
+                        jitter_seconds = random.uniform(0, min(900, self.check_interval))  # до 15 минут или check_interval
+                        # Небольшая асинхронная пауза перед отправкой
+                        await asyncio.sleep(jitter_seconds)
+
+                        # Генерируем и отправляем
+                        success = await self._send_proactive_message_with_dedup(user_id, activity, trigger)
                         if success:
                             proactive_sent_count += 1
-                            self.sent_today[user_id] = current_time
+                            # Добавляем время отправки в список sent_today
+                            self.sent_today.setdefault(user_id, []).append(datetime.utcnow())
                             self.logger.info(f"Sent {trigger.value} to user {user_id}")
                         break
 
@@ -133,36 +158,61 @@ class ProactiveMessageManager:
         if proactive_sent_count > 0:
             self.logger.info(f"Sent {proactive_sent_count} proactive messages")
         else:
-            self.logger.info("No proactive messages to send at this time")
+            self.logger.debug("No proactive messages to send at this time")
 
-    async def _send_proactive_message(self, user_id: int, activity: UserActivity, trigger: ProactiveTrigger) -> bool:
-        """Отправить проактивное сообщение в Telegram"""
+    async def _send_proactive_message_with_dedup(self, user_id: int, activity: UserActivity, trigger: ProactiveTrigger) -> bool:
+        """
+        Сначала генерируем сообщение, проверяем на дубликат по последним текстам
+        и по кэшу генератора, затем отправляем.
+        """
         try:
             message_limits = self.message_limit_service.get_user_limits(user_id)
 
             # Получаем профиль и контекст
             profile = self.profile_repo.get_profile(user_id)
-            conversation_context = self.conversation_repo.get_conversation_context(user_id,
-                                                                                   message_limits.config.max_context_messages)
+            conversation_context = self.conversation_repo.get_conversation_context(
+                user_id, message_limits.config.max_context_messages
+            )
 
             # Генерируем сообщение
             message = await self.generator.generate_proactive_message(
                 user_id, profile, activity, trigger, conversation_context
             )
 
+            if not message:
+                self.logger.debug(f"No message generated for user {user_id}, trigger {trigger}")
+                return False
+
+            # Дедупликация по тексту: проверяем последние отправленные тексты
+            last_texts = self.last_sent_texts.get(user_id, [])
+            if message in last_texts:
+                self.logger.info(f"Skipping send to {user_id}: identical to recently sent text")
+                return False
+
+            # Дополнительно: если в памяти генератора есть last_generated и совпадает с new message — пропускаем
+            last_generated = self.generator.get_last_for_user(user_id)
+            if last_generated and last_generated == message:
+                # если последнее сгенерированное == новое, значит модель повторяется — пропускаем
+                self.logger.info(f"Skipping send to {user_id}: generator repeated last message")
+                return False
+
+            # Отправляем через безопасный метод
             if message and hasattr(self.bot, '_safe_send_message'):
-                # Используем безопасный метод отправки через TelegramMessageSender
                 success = await self.bot._safe_send_message(
                     chat_id=user_id,
                     text=message
                 )
 
                 if success:
-                    # Обновляем время последнего проактивного сообщения
+                    # Обновляем время и кэш текстов
                     activity.last_proactive_time = datetime.utcnow()
-
-                    # Сохраняем в базу
                     self.proactive_repo.save_activity(activity)
+
+                    # Обновляем last_sent_texts (крутящийся буфер)
+                    lst = self.last_sent_texts.setdefault(user_id, [])
+                    lst.append(message)
+                    if len(lst) > self._LAST_TEXTS_KEEP:
+                        lst.pop(0)
 
                     self.logger.info(f"📨 Telegram proactive message sent to {user_id}")
                     return True
@@ -179,25 +229,22 @@ class ProactiveMessageManager:
 
     def _has_reached_daily_limit(self, user_id: int, current_time: datetime) -> bool:
         """Проверить, достигнут ли дневной лимит сообщений для пользователя"""
-        if user_id not in self.sent_today:
-            return False
-
-        sent_count_today = 0
-        for uid, sent_time in self.sent_today.items():
-            if uid == user_id and sent_time.date() == current_time.date():
-                sent_count_today += 1
-
+        sent_times = self.sent_today.get(user_id, [])
+        # Считаем только отправки за текущую дату
+        sent_count_today = sum(1 for t in sent_times if t.date() == current_time.date())
         return sent_count_today >= config.proactive.max_messages_per_day
 
     def _cleanup_sent_cache(self, current_time: datetime):
         """Очистить кэш отправленных сообщений от вчерашних записей"""
-        users_to_remove = []
-        for user_id, sent_time in self.sent_today.items():
-            if sent_time.date() < current_time.date():
-                users_to_remove.append(user_id)
+        removed = 0
+        for user_id, times in list(self.sent_today.items()):
+            new_times = [t for t in times if t.date() == current_time.date()]
+            if new_times:
+                self.sent_today[user_id] = new_times
+            else:
+                del self.sent_today[user_id]
+                removed += 1
 
-        for user_id in users_to_remove:
-            del self.sent_today[user_id]
+        if removed:
+            self.logger.info(f"🧹 Cleaned {removed} old entries from sent cache")
 
-        if users_to_remove:
-            self.logger.info(f"🧹 Cleaned {len(users_to_remove)} old entries from sent cache")

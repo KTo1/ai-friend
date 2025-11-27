@@ -1,3 +1,4 @@
+# domain/service/proactive_generator.py
 import os
 import asyncio
 from typing import List, Dict, Optional
@@ -8,10 +9,27 @@ from infrastructure.monitoring.logging import StructuredLogger
 
 
 class ProactiveMessageGenerator:
+    """
+    Генератор проактивных сообщений.
+    Улучшения:
+    - Метод get_last_for_user для проверки последнего сгенерированного сообщения (используется менеджером)
+    - Улучшенная валидация и более разнообразный fallback через _get_fallback_message (без шаблонных фраз)
+    - Хранение последних N сгенерированных сообщений в памяти для дедупа
+    """
+
     def __init__(self, ai_client):
         self.ai_client = ai_client
         self.logger = StructuredLogger("proactive_generator")
-        self._last_generated_messages = {}  # Кэш последних сообщений по пользователям
+        # Кэш последних сообщений по пользователям (список последних N)
+        self._last_generated_messages: Dict[int, List[str]] = {}
+        self._KEEP_LAST = 5
+
+    def get_last_for_user(self, user_id: int) -> Optional[str]:
+        """Вернуть последний сгенерированный текст для пользователя (или None)"""
+        lst = self._last_generated_messages.get(user_id)
+        if lst:
+            return lst[-1]
+        return None
 
     async def generate_proactive_message(self,
                                          user_id: int,
@@ -36,48 +54,80 @@ class ProactiveMessageGenerator:
                 messages.extend(conversation_context[-3:])  # Последние 3 сообщения
 
             # Проверяем, чтобы не повторять предыдущее сообщение
-            last_message = self._last_generated_messages.get(user_id)
-            if last_message:
+            last_messages = self._last_generated_messages.get(user_id, [])
+            if last_messages:
+                # даём модели явное указание не повторять N последних сообщений
+                not_repeat = "|".join([m.replace("\n", " ")[:200] for m in last_messages[-3:]])
                 messages.append({
                     "role": "system",
-                    "content": f"ВАЖНО: Не повторяй предыдущее сообщение: '{last_message}'"
+                    "content": f"ВАЖНО: не используй и не повторяй фразы, похожие на: {not_repeat}"
                 })
 
             # ВЫЗОВ LLM ДЛЯ ГЕНЕРАЦИИ СООБЩЕНИЯ
-            response = await self.ai_client.generate_response(
+            response = await self.ai_client.generate_response_safe(
                 messages,
-                max_tokens=150,  # Увеличил лимит для более разнообразных сообщений
-                temperature=0.9  # Увеличил температуру для большей креативности
+                max_tokens=250,  # лимит для проактива
+                temperature=0.9  # побольше креативности
             )
 
-            if response and self._is_valid_proactive_message(response):
-                # Сохраняем в кэш
-                self._last_generated_messages[user_id] = response.strip()
+            # Гарантируем что ответ существует
+            if response and isinstance(response, str):
+                candidate = response.strip()
 
-                self.logger.info(f"Generated proactive message for user {user_id}")
-                return response.strip()
+                # Валидация: проверяем, что сообщение не шаблонное и достаточно содержательное
+                if self._is_valid_proactive_message(candidate):
+                    # Сохраняем в кэш последних сообщений
+                    lst = self._last_generated_messages.setdefault(user_id, [])
+                    lst.append(candidate)
+                    if len(lst) > self._KEEP_LAST:
+                        lst.pop(0)
+
+                    self.logger.info(f"Generated proactive message for user {user_id}")
+                    return candidate
+                else:
+                    # Если LLM вернул шаблонную фразу — используем наш более разнообразный fallback
+                    self.logger.debug("Generated message rejected by _is_valid_proactive_message, using fallback")
+                    fallback = self._get_fallback_message(trigger, profile, conversation_context)
+                    # Сохраняем fallback тоже в кэш
+                    lst = self._last_generated_messages.setdefault(user_id, [])
+                    lst.append(fallback)
+                    if len(lst) > self._KEEP_LAST:
+                        lst.pop(0)
+                    return fallback
             else:
-                return self._get_fallback_message(trigger, profile, conversation_context)
+                # Если LLM не дал ответа — fallback
+                self.logger.warning("LLM returned empty response, using fallback")
+                fallback = self._get_fallback_message(trigger, profile, conversation_context)
+                lst = self._last_generated_messages.setdefault(user_id, [])
+                lst.append(fallback)
+                if len(lst) > self._KEEP_LAST:
+                    lst.pop(0)
+                return fallback
 
         except Exception as e:
             self.logger.error(f"Error generating proactive message: {e}")
-            return self._get_fallback_message(trigger, profile, conversation_context)
+            # На ошибки — fallback
+            fallback = self._get_fallback_message(trigger, profile, conversation_context)
+            lst = self._last_generated_messages.setdefault(user_id, [])
+            lst.append(fallback)
+            if len(lst) > self._KEEP_LAST:
+                lst.pop(0)
+            return fallback
 
     def _build_system_prompt(self, profile: UserProfile, activity: UserActivity,
                              trigger: ProactiveTrigger, context: List[Dict]) -> str:
         """Построить системный промпт"""
-
         base_prompt = """Ты — Айна, заботливый виртуальный друг. Сгенерируй естественное проактивное сообщение.
 
 ТРЕБОВАНИЯ К СООБЩЕНИЮ:
-- Естественное и непринужденное (1-2 предложения)
+- Естественное и непринужденное (1-2 предложения, 100 - 200 символов)
 - Теплое и поддерживающее, но не навязчивое
 - Учитывай время суток и контекст общения
 - Используй информацию о пользователе для персонализации
-- Будь креативной - не используй шаблонные фразы
+- Не используй шаблонные фразы вроде: 'как твое настроение', 'что нового', 'кстати'
 - Сообщение должно вызывать желание ответить
 
-СТИЛЬ: дружеский, заботливый, с легким использованием эмодзи
+СТИЛЬ: дружеский, заботливый, с лёгким использованием эмодзи
 ТОН: естественный, как в разговоре с близким другом
 
 ЗАПРЕЩЕНО:
@@ -86,71 +136,30 @@ class ProactiveMessageGenerator:
 - Не повторяй одни и те же формулировки
 - Избегай шаблонных вопросов"""
 
-        # Добавляем информацию о пользователе
-        if profile and profile.name:
-            base_prompt += f"\n\nИмя пользователя: {profile.name}"
-        if profile and profile.interests:
-            base_prompt += f"\nИнтересы пользователя: {profile.interests}"
-
-        # Добавляем информацию о времени и триггере
-        local_time = activity.get_local_time()
-        time_info = "утро" if 5 <= local_time.hour < 12 else "день" if 12 <= local_time.hour < 18 else "вечер"
-        base_prompt += f"\n\nСЕЙЧАС: {time_info}, время: {local_time.strftime('%H:%M')}"
-        base_prompt += f"\nТРИГГЕР: {trigger.value}"
-
-        # Добавляем контекст из последних сообщений
-        if context:
-            recent_topics = self._extract_recent_topics(context)
-            if recent_topics:
-                base_prompt += f"\nНЕДАВНИЕ ТЕМЫ: {recent_topics}"
-
         return base_prompt
 
-    def _build_user_prompt(self, trigger: ProactiveTrigger, profile: UserProfile,
-                           context: List[Dict]) -> str:
-        """Построить пользовательский промпт с учетом контекста"""
+    def _build_user_prompt(self, trigger: ProactiveTrigger, profile: UserProfile, context: List[Dict]) -> str:
+        """Построить пользовательскую подсказку (кратко)"""
+        name = profile.name if profile and profile.name else ""
+        recent_topics = self._extract_recent_topics(context)
+        if recent_topics:
+            recent_part = f" Упомяни недавние темы: {recent_topics}."
+        else:
+            recent_part = ""
 
-        name = profile.name if profile and profile.name else "друг"
-
-        # БОЛЕЕ КОНКРЕТНЫЕ И РАЗНООБРАЗНЫЕ ПРОМПТЫ
-        prompts = {
-            ProactiveTrigger.MORNING_GREETING: [
-                f"Напиши короткое утреннее приветствие для {name}. Упомяни что-то позитивное про утро",
-                f"Придумай теплое утреннее сообщение для {name}. Можно связать с планами на день",
-                f"Сгенерируй дружеское утреннее приветствие для {name}. Создай ощущение начала нового дня"
-            ],
-            ProactiveTrigger.EVENING_CHECK: [
-                f"Напиши вечернее сообщение для {name}. Спроси о дне, но не шаблонно",
-                f"Придумай, как спросить у {name} о прошедшем дне естественно и тепло",
-                f"Сгенерируй вечерний вопрос для {name} о том, что сегодня было запоминающегося"
-            ],
-            ProactiveTrigger.INACTIVITY_REMINDER: [
-                f"Напиши легкое напоминание о себе для {name} после перерыва в общении",
-                f"Придумай, как мягко напомнить {name} о себе после периода молчания",
-                f"Сгенерируй сообщение для {name}, которое покажет, что ты скучаешь по общению"
-            ],
-            ProactiveTrigger.FOLLOW_UP: [
-                f"Напиши сообщение для продолжения предыдущего разговора с {name}",
-                f"Придумай вопрос для {name}, который продолжит недавнюю тему",
-                f"Сгенерируй естественный переход к предыдущему разговору с {name}"
-            ]
-        }
-
-        import random
-        trigger_prompts = prompts.get(trigger, ["Напиши естественное сообщение для поддержания общения"])
-        return random.choice(trigger_prompts)
+        trigger_label = trigger.name.replace("_", " ").lower()
+        return f"Задача: создай дружеское, ненавязчивое сообщение для {name}. Контекст триггера: {trigger_label}.{recent_part}"
 
     def _extract_recent_topics(self, context: List[Dict]) -> str:
         """Извлечь темы из последних сообщений для персонализации"""
         user_messages = []
-        for msg in context[-5:]:  # Последние 5 сообщений
+        for msg in (context or [])[-5:]:  # Последние 5 сообщений
             if msg.get('role') == 'user':
                 content = msg.get('content', '')
-                if len(content) > 10:  # Берем только содержательные сообщения
-                    user_messages.append(content[:100] + "...")  # Обрезаем длинные сообщения
-
+                if len(content) > 10:
+                    user_messages.append(content[:120])
         if user_messages:
-            return " | ".join(user_messages[-3:])  # Последние 3 темы
+            return " | ".join(user_messages[-3:])
         return ""
 
     def _is_valid_proactive_message(self, message: str) -> bool:
@@ -158,14 +167,16 @@ class ProactiveMessageGenerator:
         if not message or len(message.strip()) < 10:
             return False
 
-        # Проверяем на шаблонные фразы
+        # Проверяем на шаблонные фразы (расширенный список)
         template_phrases = [
             "как твое настроение",
             "как твои дела",
             "что нового",
             "как прошел твой день",
             "кстати,",
-            "привет, как дела"
+            "привет, как дела",
+            "как настроение",
+            "как дела"
         ]
 
         message_lower = message.lower()
@@ -174,38 +185,38 @@ class ProactiveMessageGenerator:
                 self.logger.warning(f"Message contains template phrase: '{phrase}'")
                 return False
 
-        return len(message) < 250  # Не слишком длинное
+        # Ограничение длины, но допускаем краткость
+        return 10 <= len(message) <= 300
 
     def _get_fallback_message(self, trigger: ProactiveTrigger, profile: UserProfile,
                               context: List[Dict] = None) -> str:
-        """Запасные сообщения с большим разнообразием"""
+        """Запасные сообщения с большим разнообразием (убраны самые шаблонные фразы)"""
         name = profile.name if profile and profile.name else ""
         greeting = f", {name}" if name else ""
 
-        # РАЗНООБРАЗНЫЕ FALLBACK-СООБЩЕНИЯ
         fallbacks = {
             ProactiveTrigger.MORNING_GREETING: [
-                f"Доброе утро{greeting}! ☀️ Надеюсь, сегодня тебя ждет что-то хорошее",
-                f"Привет{greeting}! Прекрасное утро, не правда ли?",
-                f"С добрым утром{greeting}! 🌄 Какой у тебя план на сегодня?"
+                f"Доброе утро{greeting}! ☀️ Сегодня хочется верить, что день будет тёплым — как тебе такое начало?",
+                f"Хорошего утра{greeting}! 😊 Есть что-то, что сегодня тебя радует?",
+                f"С добрым утром{greeting}! 🌄 Маленькая мысль на день: что бы ты хотел сделать первым?"
             ],
             ProactiveTrigger.EVENING_CHECK: [
-                f"Привет{greeting}! 🌙 Расскажешь, что интересного было сегодня?",
-                f"Добрый вечер{greeting}! Как прошел твой день?",
-                f"Привет{greeting}! Удалось сегодня сделать что-то приятное?"
+                f"Добрый вечер{greeting}. Какой момент дня сегодня особенно запомнился?",
+                f"Я тут подумала о нашем разговоре — хочешь поделиться, как прошёл день?",
+                f"Вечерний привет{greeting}! Было ли сегодня что-то приятное?"
             ],
             ProactiveTrigger.INACTIVITY_REMINDER: [
-                f"Привет{greeting}! 💫 Я тут подумала о тебе и решила написать",
-                f"Эй{greeting}! Давно не общались, соскучилась по нашим разговорам",
-                f"Привет{greeting}! Надеюсь, у тебя все хорошо 🌟"
+                f"Я просто решила написать и сказать, что думаю о тебе{greeting}. Как ты?",
+                f"Эй{greeting}! Скучаю по нашим разговором — может, расскажешь что-то новое?",
+                f"Привет{greeting}! Просто мягкое напоминание: я рядом, если хочешь поболтать."
             ],
             ProactiveTrigger.FOLLOW_UP: [
-                f"Слушай{greeting}, а помнишь наш недавний разговор?",
-                f"Привет{greeting}! Кстати, я тут подумала о нашей беседе...",
-                f"Эй{greeting}! Вернемся к нашему предыдущему разговору?"
+                f"Слушай{greeting}, а помнишь нашу последнюю тему? Хотела бы узнать, как там дела...",
+                f"Я тут вспомнила, о чём мы говорили — хочется продолжить, если хочешь.",
+                f"Эй{greeting}! Есть небольшой вопрос по нашей прошлой беседе — хочешь обсудить?"
             ]
         }
 
         import random
-        trigger_fallbacks = fallbacks.get(trigger, [f"Привет{greeting}! Как твои дела? 😊"])
+        trigger_fallbacks = fallbacks.get(trigger, [f"Привет{greeting}! Я рядом, если хочешь поговорить."])
         return random.choice(trigger_fallbacks)

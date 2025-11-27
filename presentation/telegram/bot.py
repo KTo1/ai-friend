@@ -188,9 +188,6 @@ class FriendBot:
         # Инициализация проактивных сообщений
         self.proactive_manager = None
 
-        # Запускаем планировщик проактивных сообщений
-        self._start_proactive_scheduler()
-
         self.logger.info("FriendBot initialized successfully")
 
     async def _safe_reply(self, update: Update, text: str, **kwargs) -> bool:
@@ -228,24 +225,6 @@ class FriendBot:
         thread = threading.Thread(target=start_async_monitoring, daemon=True)
         thread.start()
         self.logger.info("Proactive messages monitoring started")
-
-    def _start_proactive_scheduler(self):
-        """Запустить планировщик проактивных сообщений"""
-        import threading
-        import time
-
-        def proactive_worker():
-            while True:
-                try:
-                    self._check_proactive_messages()
-                    time.sleep(60)  # Проверять каждую минуту
-                except Exception as e:
-                    self.logger.error(f"Proactive scheduler error: {e}")
-                    time.sleep(300)  # Подождать 5 минут при ошибке
-
-        thread = threading.Thread(target=proactive_worker, daemon=True)
-        thread.start()
-        self.logger.info("Proactive message scheduler started")
 
     def _check_proactive_messages(self):
         """Проверить и отправить проактивные сообщения"""
@@ -449,6 +428,21 @@ class FriendBot:
         if not success:
             self.logger.error(f"Failed to send tariff info to user {user_id}")
 
+    async def all_tariffs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать пользователю все доступные тарифные планы"""
+        user_id = update.effective_user.id
+        self.logger.info("User requested tariffs list", extra={'user_id': user_id})
+
+        message = self.manage_tariff_uc.get_all_tariffs()
+
+        full_message = "📋 **Доступные тарифные планы:**\n\n" \
+                       "💡 Твой текущий тариф: используй /tariff\n\n" \
+                       + message
+
+        success = await self._safe_reply(update, full_message)
+        if not success:
+            self.logger.error(f"Failed to send tariffs list to user {user_id}")
+
     async def admin_users(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список пользователей"""
         user_id = update.effective_user.id
@@ -586,7 +580,6 @@ class FriendBot:
     • `/admin_users [страница]` - список всех пользователей
     • `/admin_list` - список администраторов
     • `/admin_blocked_list` - список заблокированных
-    • `/admin_tariffs` - список тарифных планов
 
     📊 **Статистика и информация:**
     • `/admin_stats` - общая статистика пользователей
@@ -594,7 +587,6 @@ class FriendBot:
     • `/admin_message_stats [user_id]` - статистика сообщений
     • `/admin_limits [user_id]` - ВСЕ лимиты пользователя
     • `/admin_user_tariff [user_id]` - тариф пользователя
-    • `/admin_tariff_info <ID>` - информация о тарифе
 
     💰 **Управление тарифами:**
     • `/admin_assign_tariff <user_id> <tariff_id> [дней]` - назначить тариф
@@ -627,7 +619,6 @@ class FriendBot:
     💡 **Примеры использования:**
     `/admin_assign_tariff 123456789 1 30` - назначить тариф 1 на 30 дней
     `/admin_user_tariff 123456789` - посмотреть тариф пользователя
-    `/admin_tariffs` - список доступных тарифов
 
     📊 **Обычные команды (для всех):**
     • `/start` - начать общение
@@ -636,6 +627,9 @@ class FriendBot:
     • `/limits` - лимиты сообщений
     • `/reset` - сбросить разговор
     • `/health` - статус системы
+    • `/tariff` - твой тариф
+    • `/all_tariffs` - все тарифы
+    • `/tariff_info <ID>` - информация о тарифе
         """
         success = await self._safe_reply(update, help_text)
         if not success:
@@ -978,40 +972,6 @@ class FriendBot:
         if not success:
             self.logger.error(f"Failed to send limits help to user {user_id}")
 
-    async def admin_tariffs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать список тарифных планов"""
-        user_id = update.effective_user.id
-
-        if not self.manage_admin_uc.is_user_admin(user_id):
-            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
-            return
-
-        message = self.manage_tariff_uc.get_all_tariffs()
-        success = await self._safe_reply(update, message)
-        if not success:
-            self.logger.error(f"Failed to send tariffs list to user {user_id}")
-
-    async def admin_tariff_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать информацию о тарифном плане"""
-        user_id = update.effective_user.id
-
-        if not self.manage_admin_uc.is_user_admin(user_id):
-            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
-            return
-
-        if not context.args:
-            success = await self._safe_reply(update, "❌ Укажите ID тарифа: /admin_tariff_info <ID>")
-            return
-
-        try:
-            tariff_id = int(context.args[0])
-            message = self.manage_tariff_uc.get_tariff_info(tariff_id)
-            success = await self._safe_reply(update, message)
-            if not success:
-                self.logger.error(f"Failed to send tariff info to user {user_id}")
-        except ValueError:
-            success = await self._safe_reply(update, "❌ Неверный формат ID тарифа")
-
     async def admin_assign_tariff(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Назначить тариф пользователю"""
         user_id = update.effective_user.id
@@ -1026,7 +986,7 @@ class FriendBot:
                                              "Пример:\n"
                                              "/admin_assign_tariff 123456789 1\n"
                                              "/admin_assign_tariff 123456789 2 30\n\n"
-                                             "Используйте /admin_tariffs чтобы посмотреть доступные тарифы"
+                                             "Используйте /all_tariffs чтобы посмотреть доступные тарифы"
                                              )
             return
 
@@ -1181,6 +1141,7 @@ class FriendBot:
 /reset - начать разговор заново
 /tariff - мой тарифный план и лимиты
 /limits - текущее использование лимитов
+/all_tariffs - все доступные тарифы
 
 Я запомню:
 • Как тебя зовут
@@ -1207,6 +1168,7 @@ class FriendBot:
         self.application.add_handler(CommandHandler("reset", self.reset))
         self.application.add_handler(CommandHandler("limits", self.limits))
         self.application.add_handler(CommandHandler("tariff", self.tariff))
+        self.application.add_handler(CommandHandler("all_tariffs", self.all_tariffs))
 
         # Административные команды
         self.application.add_handler(CommandHandler("admin_users", self.admin_users))
@@ -1236,8 +1198,6 @@ class FriendBot:
         self.application.add_handler(CommandHandler("admin_limits_help", self.admin_limits_help))
 
         # Команды управления тарифами
-        self.application.add_handler(CommandHandler("admin_tariffs", self.admin_tariffs))
-        self.application.add_handler(CommandHandler("admin_tariff_info", self.admin_tariff_info))
         self.application.add_handler(CommandHandler("admin_assign_tariff", self.admin_assign_tariff))
         self.application.add_handler(CommandHandler("admin_user_tariff", self.admin_user_tariff))
         self.application.add_handler(CommandHandler("admin_apply_tariff_limits", self.admin_apply_tariff_limits))
