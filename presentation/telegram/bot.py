@@ -1119,26 +1119,25 @@ class FriendBot:
             # выглядит так как будто это надо перенести в response = await self.handle_message_uc.execute(
             # изачально факты извлекаись из истории соообщений, что неверно, туда попадали и сообщения бота.
             #  но может это и подйет, надо проверить и так и так а пока я отсавлю только сообщение пользователя
-            #  но может это и подйет, надо проверить и так и так а пока я отсавлю только сообщение пользователя
             rag_enabled = tariff_plan and tariff_plan.is_rag_enabled()
             rag_context = ""
             if rag_enabled:
-                # # Получаем контекст разговора для RAG
-                # conversation_context = self.conversation_repo.get_conversation_context(
-                #     user.id,
-                #     self.message_limit_service.get_user_limits(user.id).config.max_context_messages
-                # )
+                # Получаем контекст разговора для RAG
+                conversation_context = self.conversation_repo.get_conversation_context(
+                    user.id,
+                    self.message_limit_service.get_user_limits(user.id).config.max_context_messages
+                )
 
                 # Извлекаем и сохраняем воспоминания (асинхронно, не блокируя ответ)
                 asyncio.create_task(
                     self.manage_rag_uc.extract_and_save_memories(
-                        user.id, user_message, user_message
+                        user.id, user_message, conversation_context
                     )
                 )
 
                 # Получаем релевантные воспоминания для текущего сообщения
                 rag_context = await self.manage_rag_uc.prepare_rag_context(
-                    user.id, user_message, user_message
+                    user.id, user_message, conversation_context
                 )
 
             # Обновляем системный промпт с RAG контекстом
