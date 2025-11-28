@@ -18,3 +18,17 @@ nano .env  # Заполните TELEGRAM_BOT_TOKEN и другие переме�
 # 3. Запустите деплой
 chmod +x deploy.sh
 ./deploy.sh
+
+# Добавьте репозиторий pgvector
+sudo apt-get update
+sudo apt-get install wget gnupg lsb-release
+wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+echo "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+
+# Установите расширение
+sudo apt-get update
+sudo apt-get install postgresql-13-vector  # для PostgreSQL 13
+# ИЛИ
+sudo apt-get install postgresql-14-vector  # для PostgreSQL 14
+# ИЛИ
+sudo apt-get install postgresql-15-vector  # для PostgreSQL 15

@@ -48,6 +48,11 @@ from application.use_case.manage_tariff import ManageTariffUseCase
 from presentation.telegram.message_sender import get_telegram_sender, get_telegram_rate_limiter
 from config.settings import config
 
+from infrastructure.database.repositories.rag_repository import RAGRepository
+from domain.service.rag_service import RAGService
+from application.use_case.manage_rag import ManageRAGUseCase
+
+
 # gpt
 FRIEND_PROMPT = """
 Ты — виртуальный друг-компаньон по имени Айна.  
@@ -148,6 +153,10 @@ class FriendBot:
         self.rate_limit_repo = RateLimitRepository(self.database)
         self.message_limit_repo = MessageLimitRepository(self.database)
         self.tariff_repo = TariffRepository(self.database)
+        self.rag_repo = RAGRepository(self.database)
+
+        # Используем фабрику для создания AI клиента!
+        self.ai_client = AIFactory.create_client()
 
         # Инициализация бизнес-логики
         self.admin_service = AdminService(self.user_repo)
@@ -155,9 +164,7 @@ class FriendBot:
         self.rate_limit_service = RateLimitService(self.rate_limit_repo)
         self.message_limit_service = MessageLimitService(self.message_limit_repo)
         self.tariff_service = TariffService(self.tariff_repo)
-
-        # Используем фабрику для создания AI клиента!
-        self.ai_client = AIFactory.create_client()
+        self.rag_service = RAGService(self.ai_client)
 
         self.health_checker = HealthChecker(self.database)
 
@@ -182,6 +189,7 @@ class FriendBot:
             self.message_limit_service
         )
         self.manage_tariff_uc = ManageTariffUseCase(self.tariff_service)
+        self.manage_rag_uc = ManageRAGUseCase(self.rag_repo, self.rag_service)
 
         self.middleware = TelegramMiddleware()
 
@@ -1103,13 +1111,44 @@ class FriendBot:
                     self.middleware.create_user_from_telegram(user)
                 )
 
+            # ПРОВЕРКА ТАРИФА ДЛЯ RAG
+            user_tariff = self.tariff_service.get_user_tariff(user.id)
+            tariff_plan = user_tariff.tariff_plan if user_tariff else None
+
+            # RAG доступен только на платных тарифах (не бесплатный)
+            rag_enabled = tariff_plan and tariff_plan.is_rag_enabled()
+            rag_context = ""
+            if rag_enabled:
+                # Получаем контекст разговора для RAG
+                conversation_context = self.conversation_repo.get_conversation_context(
+                    user.id,
+                    self.message_limit_service.get_user_limits(user.id).config.max_context_messages
+                )
+
+                # Извлекаем и сохраняем воспоминания (асинхронно, не блокируя ответ)
+                asyncio.create_task(
+                    self.manage_rag_uc.extract_and_save_memories(
+                        user.id, user_message, conversation_context
+                    )
+                )
+
+                # Получаем релевантные воспоминания для текущего сообщения
+                rag_context = await self.manage_rag_uc.prepare_rag_context(
+                    user.id, user_message, conversation_context
+                )
+
+            # Обновляем системный промпт с RAG контекстом
+            enhanced_system_prompt = FRIEND_PROMPT
+            if rag_context:
+                enhanced_system_prompt = f"{FRIEND_PROMPT}\n\n{rag_context}"
+
             # Извлекаем и обновляем профиль
             profile_data = await self.manage_profile_uc.extract_and_update_profile(user_id, user_message)
             profile = self.profile_repo.get_profile(user_id)
 
             # Обрабатываем сообщение (АСИНХРОННО!)
             response = await self.handle_message_uc.execute(
-                user_id, user_message, FRIEND_PROMPT, profile
+                user_id, user_message, enhanced_system_prompt, profile
             )
 
             # ЗАПИСЫВАЕМ ИСПОЛЬЗОВАНИЕ СООБЩЕНИЯ (только для обычных пользователей)

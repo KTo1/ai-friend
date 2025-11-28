@@ -16,7 +16,7 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt",
 
     if exclude_dirs is None:
         # Добавил .github, чтобы исключить стандартные CI/CD папки
-        exclude_dirs = ['.git', '__pycache__', '.vscode', '.idea', 'venv', 'env', 'node_modules', '.github']
+        exclude_dirs = ['.git', '__pycache__', '.vscode', '.idea', 'venv', 'env', 'node_modules', '.github', 'grafana', 'elk', 'postgres', 'logs', 'prometheus', 'tests']
 
     if include_dirs is None:
         include_dirs = []  # Пустой список означает "включать всё"

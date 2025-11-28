@@ -31,6 +31,11 @@ class TariffPlan:
         if self.updated_at is None:
             self.updated_at = datetime.utcnow()
 
+    def is_rag_enabled(self) -> bool:
+        """Проверить, доступен ли RAG для этого тарифа"""
+        # RAG доступен для всех тарифов кроме бесплатного
+        return self.name != 'Бесплатный' and self.is_active
+
     def to_dict(self) -> Dict[str, Any]:
         """Преобразовать в словарь для отображения"""
         return {
@@ -52,7 +57,8 @@ class TariffPlan:
             },
             'features': self.features,
             'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat()
+            'updated_at': self.updated_at.isoformat(),
+            'rag_enabled': self.is_rag_enabled(),
         }
 
     def apply_to_user_limits(self, user_limits) -> None:
