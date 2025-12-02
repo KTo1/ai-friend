@@ -58,7 +58,7 @@ class PostgreSQLDatabase:
                     CREATE TABLE IF NOT EXISTS user_rag_memories (
                     id SERIAL PRIMARY KEY,
                     user_id BIGINT NOT NULL,
-                    memory_type VARCHAR(20) NOT NULL,
+                    memory_type VARCHAR(40) NOT NULL,
                     content TEXT NOT NULL,
                     source_message TEXT,
                     importance_score FLOAT DEFAULT 0.5,

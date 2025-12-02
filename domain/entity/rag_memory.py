@@ -9,6 +9,7 @@ class MemoryType(Enum):
     PREFERENCE = "preference"
     EVENT = "event"
     PERSONAL_DETAIL = "personal_detail"
+    PERSONAL_CHARACTERISTIC = "personal_characteristic"
 
 
 @dataclass

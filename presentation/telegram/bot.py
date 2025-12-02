@@ -1122,22 +1122,23 @@ class FriendBot:
             rag_enabled = tariff_plan and tariff_plan.is_rag_enabled()
             rag_context = ""
             if rag_enabled:
-                # Получаем контекст разговора для RAG
-                conversation_context = self.conversation_repo.get_conversation_context(
-                    user.id,
-                    self.message_limit_service.get_user_limits(user.id).config.max_context_messages
-                )
-
-                # Извлекаем и сохраняем воспоминания (асинхронно, не блокируя ответ)
+                # Извлекаем и сохраняем воспоминания (асинхронно)
                 asyncio.create_task(
-                    self.manage_rag_uc.extract_and_save_memories(
-                        user.id, user_message, conversation_context
-                    )
+                    self.manage_rag_uc.extract_and_save_memories(user.id, user_message)
                 )
 
                 # Получаем релевантные воспоминания для текущего сообщения
                 rag_context = await self.manage_rag_uc.prepare_rag_context(
-                    user.id, user_message, conversation_context
+                    user.id, user_message
+                )
+
+                self.logger.debug(
+                    "RAG context prepared",
+                    extra={
+                        'user_id': user.id,
+                        'rag_context_length': len(rag_context),
+                        'has_rag_context': bool(rag_context)
+                    }
                 )
 
             # Обновляем системный промпт с RAG контекстом

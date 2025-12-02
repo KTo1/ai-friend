@@ -13,22 +13,35 @@ class ManageRAGUseCase:
         self.rag_repo = rag_repository
         self.rag_service = rag_service
         self.logger = StructuredLogger("manage_rag_uc")
+        self.bot_keywords = [
+            'айна', 'бот', 'ты ', 'тебе', 'твой', 'твоя', 'твоё', 'у тебя',
+            'тебя', 'с тобой', 'тобой', 'о тебе', 'ваш', 'ваша', 'ваше'
+        ]
 
     @trace_span("usecase.extract_memories", attributes={"component": "application"})
-    async def extract_and_save_memories(self, user_id: int, message: str,
-                                        conversation_context: List[Dict] = None) -> List[RAGMemory]:
-        """Извлечь и сохранить воспоминания из сообщения"""
+    async def extract_and_save_memories(self, user_id: int, message: str) -> List[RAGMemory]:
+        """Извлечь и сохранить воспоминания ТОЛЬКО из текущего сообщения"""
         try:
-            # Извлекаем воспоминания с помощью LLM
-            memories = await self.rag_service.extract_memories_from_message(
-                user_id, message, conversation_context
-            )
+            # Извлекаем воспоминания только из текущего сообщения
+            memories = await self.rag_service.extract_memories_from_message(user_id, message)
 
             if not memories:
                 return []
 
+            # Фильтруем воспоминания, связанные с ботом
+            filtered_memories = self._filter_bot_memories(memories)
+
+            if not filtered_memories:
+                return []
+
+            # Проверяем на дубликаты перед сохранением
+            unique_memories = await self._filter_duplicate_memories(user_id, filtered_memories)
+
+            if not unique_memories:
+                return []
+
             # Генерируем эмбеддинги
-            memories_with_embeddings = await self.rag_service.generate_embeddings(memories)
+            memories_with_embeddings = await self.rag_service.generate_embeddings(unique_memories)
 
             # Сохраняем в базу
             saved_memories = []
@@ -39,8 +52,12 @@ class ManageRAGUseCase:
                     saved_memories.append(memory)
 
             self.logger.info(
-                f"Extracted and saved {len(saved_memories)} memories for user {user_id}",
-                extra={'user_id': user_id, 'extracted_count': len(memories), 'saved_count': len(saved_memories)}
+                f"RAG: Saved {len(saved_memories)} new memories from current message",
+                extra={
+                    'user_id': user_id,
+                    'original_count': len(memories),
+                    'unique_count': len(saved_memories)
+                }
             )
 
             return saved_memories
@@ -48,6 +65,74 @@ class ManageRAGUseCase:
         except Exception as e:
             self.logger.error(f"Error extracting memories for user {user_id}: {e}")
             return []
+
+    async def _filter_duplicate_memories(self, user_id: int, new_memories: List[RAGMemory]) -> List[RAGMemory]:
+        """Фильтрация дубликатов на основе семантической схожести"""
+        if not new_memories:
+            return []
+
+        # Получаем существующие воспоминания пользователя
+        existing_memories = self.rag_repo.get_user_memories(user_id, limit=50)
+
+        if not existing_memories:
+            return new_memories
+
+        unique_memories = []
+
+        for new_memory in new_memories:
+            is_duplicate = False
+
+            # Проверяем семантическую схожесть с существующими воспоминаниями
+            for existing_memory in existing_memories:
+                if existing_memory.embedding and new_memory.embedding:
+                    similarity = self._cosine_similarity(existing_memory.embedding, new_memory.embedding)
+                    if similarity > 0.85:  # Порог схожести
+                        self.logger.debug(f"Filtered duplicate memory: {new_memory.content[:50]}...")
+                        is_duplicate = True
+                        break
+
+            if not is_duplicate:
+                unique_memories.append(new_memory)
+
+        return unique_memories
+
+    def _filter_bot_memories(self, memories: List[RAGMemory]) -> List[RAGMemory]:
+        """Отфильтровать воспоминания, связанные с ботом"""
+        filtered_memories = []
+
+        for memory in memories:
+            content_lower = memory.content.lower()
+
+            # Проверяем, не содержит ли воспоминание ссылки на бота
+            is_bot_related = any(keyword in content_lower for keyword in self.bot_keywords)
+
+            if not is_bot_related:
+                filtered_memories.append(memory)
+            else:
+                memory.metadata['filtered'] = True
+                memory.metadata['filter_reason'] = 'bot_related'
+                self.logger.debug(f"Filtered bot-related memory: {memory.content}")
+
+        return filtered_memories
+
+    def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
+        """Вычисление косинусной схожести между векторами"""
+        if len(vec1) != len(vec2) or not vec1 or not vec2:
+            return 0.0
+
+        try:
+            dot_product = sum(a * b for a, b in zip(vec1, vec2))
+            norm1 = sum(a * a for a in vec1) ** 0.5
+            norm2 = sum(b * b for b in vec2) ** 0.5
+
+            if norm1 == 0 or norm2 == 0:
+                return 0.0
+
+            similarity = dot_product / (norm1 * norm2)
+            return round(similarity, 6)
+        except Exception as e:
+            self.logger.error(f"Error calculating cosine similarity: {e}")
+            return 0.0
 
     @trace_span("usecase.get_relevant_memories", attributes={"component": "application"})
     async def get_relevant_memories(self, user_id: int, user_message: str,

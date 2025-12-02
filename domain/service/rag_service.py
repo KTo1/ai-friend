@@ -13,53 +13,53 @@ class RAGService:
         self.ai_client = ai_client
         self.logger = StructuredLogger("rag_service")
 
-    async def extract_memories_from_message(self, user_id: int, message: str,
-                                            conversation_context: List[Dict] = None) -> List[RAGMemory]:
-        """Извлечь важные факты из сообщения пользователя с помощью LLM"""
+    async def extract_memories_from_message(self, user_id: int, message: str) -> List[RAGMemory]:
+        """Извлечь важные факты ИСКЛЮЧИТЕЛЬНО из текущего сообщения пользователя"""
 
-        # Промпт для извлечения фактов
+        # УПРОЩЕННЫЙ И БОЛЕЕ ЭФФЕКТИВНЫЙ ПРОМПТ
         system_prompt = """
-Ты — аналитик, который выделяет важные персональные факты из сообщений пользователя.
+    Ты — точный и быстрый инструмент для извлечения новых персональных фактов о пользователе.
 
-ВАЖНОЕ ПРАВИЛО: ИЗВЛЕКАЙ ТОЛЬКО ФАКТЫ О ПОЛЬЗОВАТЕЛЕ, ИГНОРИРУЙ ВСЁ, ЧТО КАСАЕТСЯ БОТА (Айны)
+    ПРАВИЛА:
+    1. Анализируй ТОЛЬКО текущее сообщение
+    2. Извлекай ТОЛЬКО новые факты (не те, что уже обсуждались)
+    3. Игнорируй всё, что касается бота (Айны)
+    4. Извлекай только значимые, долгосрочные факты
 
-ИЗВЛЕКАЙ ТОЛЬКО:
-- Личные предпочтения (люблю/не люблю, нравится/не нравится)
-- Важные события (дни рождения, годовщины, достижения)
-- Личные характеристики (аллергии, ограничения, привычки)
-- Долгосрочные планы и цели
-- Значимые отношения (семья, друзья)
-- Уникальные навыки и умения
+    ИЗВЛЕКАЙ ТИПЫ ФАКТОВ:
+    - Личные предпочтения и вкусы
+    - Важные события (даты, достижения)
+    - Личные характеристики и привычки
+    - Долгосрочные планы и цели
+    - Значимые отношения
+    - Уникальные навыки и умения
 
-НЕ ИЗВЛЕКАЙ:
-- Повседневные действия (сегодня пошел в магазин)
-- Временные эмоции (сегодня грустно/весело)
-- Общие размышления без конкретики
-- Поверхностные комментарии о погоде и т.д.
+    # НЕ ИЗВЛЕКАЙ:
+    # - Повседневные действия (сегодня пошел в магазин)
+    # - Временные эмоции (сегодня грустно/весело)
+    # - Общие размышления без конкретики
+    # - Поверхностные комментарии о погоде и т.д.
+    
+    Формат ответа - JSON:
+    {
+        "memories": [
+            {
+                "type": "fact|preference|event|personal_detail",
+                "content": "Краткая формулировка факта",
+                "importance": 0.8,
+                "reason": "Почему этот факт важен"
+            }
+        ]
+    }
 
-Формат ответа - JSON:
-{
-    "memories": [
-        {
-            "type": "fact|preference|event|personal_detail",
-            "content": "Краткая формулировка факта",
-            "importance": 0.8,
-            "reason": "Почему этот факт важен"
-        }
-    ]
-}
-
-Отвечай ТОЛЬКО JSON, без других текстов.
-"""
+    Если в сообщении нет новых фактов - верни {"memories": []}
+    """
 
         user_prompt = f"""
-Сообщение пользователя: "{message}"
+    Сообщение пользователя: "{message}"
 
-Контекст разговора (последние сообщения):
-{self._format_conversation_context(conversation_context) if conversation_context else "Нет контекста"}
-
-Проанализируй и извлеки важные персональные факты.
-"""
+    Извлеки ТОЛЬКО новые персональные факты о пользователе из этого сообщения.
+    """
 
         try:
             messages = [
@@ -69,27 +69,34 @@ class RAGService:
 
             response = await self.ai_client.generate_response(
                 messages,
-                max_tokens=1000,
-                temperature=0.1  # Низкая температура для консистентности
+                max_tokens=500,  # Уменьшаем, т.к. анализируем только одно сообщение
+                temperature=0.1
             )
 
-            # Парсим JSON ответ
             memories_data = self._parse_llm_response(response)
 
             memories = []
             for mem_data in memories_data.get('memories', []):
+                content = mem_data['content'].lower()
+
+                # Фильтруем факты, связанные с ботом
+                bot_keywords = ['айна', 'бот', 'ты ', 'тебе', 'твой', 'твоя', 'твоё', 'у тебя', 'тебя']
+                if any(keyword in content for keyword in bot_keywords):
+                    self.logger.debug(f"Filtered bot-related memory: {mem_data['content']}")
+                    continue
+
                 memory = RAGMemory(
                     user_id=user_id,
                     memory_type=MemoryType(mem_data['type']),
                     content=mem_data['content'],
                     source_message=message,
                     importance_score=mem_data['importance'],
-                    metadata={'extraction_reason': mem_data['reason']}
+                    metadata={'extracted_from': 'current_message_only'}
                 )
                 memories.append(memory)
 
             self.logger.info(
-                f"Extracted {len(memories)} memories from user {user_id} message",
+                f"Extracted {len(memories)} memories from current message",
                 extra={'user_id': user_id, 'message_length': len(message), 'memories_count': len(memories)}
             )
 
