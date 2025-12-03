@@ -17,36 +17,6 @@ class ManageAdminUseCase:
         """Проверить, является ли пользователь администратором"""
         return self.admin_service.is_admin(user_id)
 
-    @trace_span("usecase.promote_user", attributes={"component": "application"})
-    def promote_user(self, target_user_id: int, admin_user_id: int) -> Tuple[bool, str]:
-        """
-        Назначить пользователя администратором
-
-        Returns:
-            Tuple[bool, str]: (успех, сообщение)
-        """
-        success = self.admin_service.promote_user(target_user_id, admin_user_id)
-
-        if success:
-            return True, f"✅ Пользователь {target_user_id} назначен администратором"
-        else:
-            return False, f"❌ Не удалось назначить пользователя {target_user_id} администратором"
-
-    @trace_span("usecase.demote_user", attributes={"component": "application"})
-    def demote_user(self, target_user_id: int, admin_user_id: int) -> Tuple[bool, str]:
-        """
-        Убрать права администратора
-
-        Returns:
-            Tuple[bool, str]: (успех, сообщение)
-        """
-        success = self.admin_service.demote_user(target_user_id, admin_user_id)
-
-        if success:
-            return True, f"✅ Пользователь {target_user_id} лишен прав администратора"
-        else:
-            return False, f"❌ Не удалось лишить пользователя {target_user_id} прав администратора"
-
     @trace_span("usecase.get_admin_list", attributes={"component": "application"})
     def get_admin_list(self) -> str:
         """Получить список администраторов"""

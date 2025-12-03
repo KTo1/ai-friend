@@ -468,48 +468,6 @@ class FriendBot:
         if not success:
             self.logger.error(f"Failed to send admin users list to user {user_id}")
 
-    async def admin_promote(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Назначить пользователя администратором"""
-        user_id = update.effective_user.id
-
-        # Проверяем права администратора
-        if not self.manage_admin_uc.is_user_admin(user_id):
-            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
-            return
-
-        # Проверяем аргументы
-        if not context.args:
-            success = await self._safe_reply(update, "❌ Укажите ID пользователя: /admin_promote <user_id>")
-            return
-
-        try:
-            target_user_id = int(context.args[0])
-            success, message = self.manage_admin_uc.promote_user(target_user_id, user_id)
-            await self._safe_reply(update, message)
-        except ValueError:
-            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
-
-    async def admin_demote(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Убрать права администратора"""
-        user_id = update.effective_user.id
-
-        # Проверяем права администратора
-        if not self.manage_admin_uc.is_user_admin(user_id):
-            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
-            return
-
-        # Проверяем аргументы
-        if not context.args:
-            success = await self._safe_reply(update, "❌ Укажите ID пользователя: /admin_demote <user_id>")
-            return
-
-        try:
-            target_user_id = int(context.args[0])
-            success, message = self.manage_admin_uc.demote_user(target_user_id, user_id)
-            await self._safe_reply(update, message)
-        except ValueError:
-            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
-
     async def admin_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список администраторов"""
         user_id = update.effective_user.id
@@ -595,10 +553,6 @@ class FriendBot:
     • `/admin_set_limits <user_id> <лимиты>` - установить любые лимиты
     • `/admin_reset_limits <user_id>` - сбросить все лимиты
     • `/admin_limits_help` - справка по лимитам
-
-    👤 **Управление правами:**
-    • `/admin_promote <user_id>` - назначить администратором
-    • `/admin_demote <user_id>` - убрать права администратора
 
     🚫 **Управление блокировками:**
     • `/admin_block <user_id> [причина]` - заблокировать пользователя
@@ -1078,9 +1032,8 @@ class FriendBot:
         is_valid, error_msg = self.validate_message_uc.execute(user_id, user_message)
 
         if not is_valid:
-            # Сообщение слишком длинное - полностью отклоняем
             success = await self._safe_reply(update, error_msg)
-            return  # Прерываем обработку
+            return
 
         # ПРОВЕРКА ЛИМИТОВ (только для обычных пользователей)
         if not self.manage_admin_uc.is_user_admin(user_id):
@@ -1173,6 +1126,7 @@ class FriendBot:
 /tariff - мой тарифный план и лимиты
 /limits - текущее использование лимитов
 /all_tariffs - все доступные тарифы
+/help - помощь
 
 Я запомню:
 • Как тебя зовут
@@ -1206,8 +1160,6 @@ class FriendBot:
         self.application.add_handler(CommandHandler("admin_stats", self.admin_stats))
         self.application.add_handler(CommandHandler("admin_list", self.admin_list))
         self.application.add_handler(CommandHandler("admin_userinfo", self.admin_userinfo))
-        self.application.add_handler(CommandHandler("admin_promote", self.admin_promote))
-        self.application.add_handler(CommandHandler("admin_demote", self.admin_demote))
         self.application.add_handler(CommandHandler("admin_health", self.admin_health))
 
         # Команды блокировки

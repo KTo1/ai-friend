@@ -10,6 +10,11 @@ class MemoryType(Enum):
     EVENT = "event"
     PERSONAL_DETAIL = "personal_detail"
     PERSONAL_CHARACTERISTIC = "personal_characteristic"
+    INTEREST = "interest"
+    MOOD = "mood"
+    AGE = "age"
+    HABIT = "habit"
+    GOAL = "goal"
 
 
 @dataclass
