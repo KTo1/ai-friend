@@ -17,7 +17,7 @@ class HandleMessageUseCase:
         self.logger = StructuredLogger("handle_message_uc")
 
     @trace_span("usecase.handle_message", attributes={"component": "application"})
-    async def execute(self, user_id: int, message: str, system_prompt: str, profile_data: dict = None) -> str:
+    async def execute(self, user_id: int, message: str, system_prompt: str) -> str:
         """Обработать сообщение пользователя (асинхронно)"""
         try:
             metrics_collector.record_message_received("text")

@@ -310,22 +310,13 @@ class FriendBot:
         if not success:
             self.logger.error(f"Failed to send profile to user {user_id}")
 
-    async def memory(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
-
-        self.logger.info("Memory command received", extra={'user_id': user_id})
-
-        response = self.manage_profile_uc.get_memory(user_id)
-        success = await self._safe_reply(update, response)
-        if not success:
-            self.logger.error(f"Failed to send memory to user {user_id}")
-
     async def reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
 
         self.logger.info("Reset command received", extra={'user_id': user_id})
 
         self.conversation_repo.clear_conversation(user_id)
+        self.rag_repo.delete_user_memories(user_id)
         success = await self._safe_reply(update, "🧹 Давай начнем наш разговор заново! Как твои дела?")
         if not success:
             self.logger.error(f"Failed to send reset message to user {user_id}")
@@ -631,7 +622,6 @@ class FriendBot:
     📊 **Обычные команды (для всех):**
     • `/start` - начать общение
     • `/profile` - управление профилем
-    • `/memory` - что я о тебе помню
     • `/limits` - лимиты сообщений
     • `/reset` - сбросить разговор
     • `/health` - статус системы
@@ -1148,11 +1138,10 @@ class FriendBot:
 
             # Извлекаем и обновляем профиль
             profile_data = await self.manage_profile_uc.extract_and_update_profile(user_id, user_message)
-            profile = self.profile_repo.get_profile(user_id)
 
             # Обрабатываем сообщение (АСИНХРОННО!)
             response = await self.handle_message_uc.execute(
-                user_id, user_message, enhanced_system_prompt, profile
+                user_id, user_message, enhanced_system_prompt
             )
 
             # ЗАПИСЫВАЕМ ИСПОЛЬЗОВАНИЕ СООБЩЕНИЯ (только для обычных пользователей)
@@ -1180,7 +1169,6 @@ class FriendBot:
 Команды:
 /start - начать/продолжить общение
 /profile - посмотреть и изменить профиль
-/memory - что я о тебе помню
 /reset - начать разговор заново
 /tariff - мой тарифный план и лимиты
 /limits - текущее использование лимитов
@@ -1207,7 +1195,6 @@ class FriendBot:
         self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("profile", self.profile))
-        self.application.add_handler(CommandHandler("memory", self.memory))
         self.application.add_handler(CommandHandler("reset", self.reset))
         self.application.add_handler(CommandHandler("limits", self.limits))
         self.application.add_handler(CommandHandler("tariff", self.tariff))
