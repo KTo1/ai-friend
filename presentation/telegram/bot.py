@@ -1,5 +1,4 @@
 import os
-import logging
 import asyncio
 
 from telegram import Update
@@ -46,7 +45,6 @@ from application.use_case.manage_tariff import ManageTariffUseCase
 
 # Импорты для Telegram rate limiting
 from presentation.telegram.message_sender import get_telegram_sender, get_telegram_rate_limiter
-from config.settings import config
 
 from infrastructure.database.repositories.rag_repository import RAGRepository
 from domain.service.rag_service import RAGService
@@ -198,6 +196,14 @@ class FriendBot:
 
         self.logger.info("FriendBot initialized successfully")
 
+    async def _send_typing_status(self, chat_id: int) -> bool:
+        """Безопасный ответ на сообщение с учетом лимитов Telegram"""
+        if not hasattr(self, 'application') or not self.application:
+            self.logger.error("Bot application not available")
+            return False
+
+        return await self.telegram_sender.send_typing_status(bot=self.application.bot, chat_id=chat_id)
+
     async def _safe_reply(self, update: Update, text: str, **kwargs) -> bool:
         """Безопасный ответ на сообщение с учетом лимитов Telegram"""
         if not hasattr(self, 'application') or not self.application:
@@ -299,16 +305,6 @@ class FriendBot:
         success = await self._safe_reply(update, response)
         if not success:
             self.logger.error(f"Failed to send start message to user {user.id}")
-
-    async def profile(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
-
-        self.logger.info("Profile command received", extra={'user_id': user_id})
-
-        response = self.manage_profile_uc.get_profile(user_id)
-        success = await self._safe_reply(update, response)
-        if not success:
-            self.logger.error(f"Failed to send profile to user {user_id}")
 
     async def reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
@@ -575,10 +571,8 @@ class FriendBot:
 
     📊 **Обычные команды (для всех):**
     • `/start` - начать общение
-    • `/profile` - управление профилем
     • `/limits` - лимиты сообщений
     • `/reset` - сбросить разговор
-    • `/health` - статус системы
     • `/tariff` - твой тариф
     • `/all_tariffs` - все тарифы
     • `/tariff_info <ID>` - информация о тарифе
@@ -1017,6 +1011,8 @@ class FriendBot:
             extra={'user_id': user_id, 'message_length': len(user_message)}
         )
 
+        await self._send_typing_status(user_id)
+
         # ПРОВЕРКА БЛОКИРОВКИ ПОЛЬЗОВАТЕЛЯ
         if self.manage_block_uc.is_user_blocked(user_id):
             success = await self._safe_reply(update,
@@ -1121,11 +1117,10 @@ class FriendBot:
 
 Команды:
 /start - начать/продолжить общение
-/profile - посмотреть и изменить профиль
-/reset - начать разговор заново
-/tariff - мой тарифный план и лимиты
 /limits - текущее использование лимитов
+/tariff - мой тарифный план и лимиты
 /all_tariffs - все доступные тарифы
+/reset - начать разговор заново
 /help - помощь
 
 Я запомню:
@@ -1148,7 +1143,6 @@ class FriendBot:
     def setup_handlers(self):
         self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(CommandHandler("help", self.help_command))
-        self.application.add_handler(CommandHandler("profile", self.profile))
         self.application.add_handler(CommandHandler("reset", self.reset))
         self.application.add_handler(CommandHandler("limits", self.limits))
         self.application.add_handler(CommandHandler("tariff", self.tariff))

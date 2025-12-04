@@ -14,25 +14,6 @@ class ManageProfileUseCase:
         self.profile_service = ProfileService(ai_client)
         self.logger = StructuredLogger("manage_profile_uc")
 
-    @trace_span("usecase.get_profile", attributes={"component": "application"})
-    def get_profile(self, user_id: int) -> str:
-        profile = self.profile_repo.get_profile(user_id)
-
-        if profile:
-            return f"""
-📋 Твой профиль:
-
-👤 Имя: {profile.name or 'не указано'}
-🎂 Возраст: {profile.age or 'не указан'}
-🎯 Интересы: {profile.interests or 'не указаны'}
-😊 Последнее настроение: {profile.mood or 'не указано'}
-
-Хочешь что-то изменить? Просто напиши:
-"Меня зовут ..." или "Мои интересы ..."
-            """
-        else:
-            return "У тебя еще нет профиля. Давай создадим его! Как тебя зовут?"
-
     @trace_span("usecase.extract_profile", attributes={"component": "application"})
     async def extract_and_update_profile(self, user_id: int, message: str) -> tuple:
 

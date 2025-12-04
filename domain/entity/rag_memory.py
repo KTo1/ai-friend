@@ -5,16 +5,16 @@ from enum import Enum
 
 
 class MemoryType(Enum):
-    FACT = "fact"
-    PREFERENCE = "preference"
-    EVENT = "event"
-    PERSONAL_DETAIL = "personal_detail"
-    PERSONAL_CHARACTERISTIC = "personal_characteristic"
-    INTEREST = "interest"
-    MOOD = "mood"
-    AGE = "age"
-    HABIT = "habit"
-    GOAL = "goal"
+    FACT = "fact"                                        # Факты
+    PREFERENCE = "preference"                            # Предпочтения
+    EVENT = "event"                                      # События
+    PERSONAL_DETAIL = "personal_detail"                  # Личные детали
+    PERSONAL_CHARACTERISTIC = "personal_characteristic"  # Личные характеристики
+    INTEREST = "interest"                                # Интересы
+    MOOD = "mood"                                        # Настроение
+    AGE = "age"                                          # Возраст
+    HABIT = "habit"                                      # Привычки
+    GOAL = "goal"                                        # Цели
 
 
 @dataclass

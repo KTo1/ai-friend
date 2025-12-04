@@ -19,6 +19,17 @@ class TelegramMessageSender:
         self._max_retries = 3
         self._base_delay = 1.0
 
+    async def send_typing_status(self, bot: Bot, chat_id: int):
+        try:
+            # Получаем разрешение от rate limiter
+            await bot.send_chat_action(chat_id=chat_id, action="typing")
+        except Exception as e:
+            # Неожиданные ошибки
+            self.logger.error(f"Unexpected error sending status to chat {chat_id}: {e}")
+            metrics_collector.record_telegram_send("unexpected_error")
+
+            return False
+
     async def send_message(
         self,
         bot: Bot,
