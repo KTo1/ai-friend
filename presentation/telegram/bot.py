@@ -538,17 +538,11 @@ class FriendBot:
     • `/admin_stats` - общая статистика пользователей
     • `/admin_userinfo [user_id]` - информация о пользователе
     • `/admin_message_stats [user_id]` - статистика сообщений
-    • `/admin_limits [user_id]` - ВСЕ лимиты пользователя
     • `/admin_user_tariff [user_id]` - тариф пользователя
 
     💰 **Управление тарифами:**
     • `/admin_assign_tariff <user_id> <tariff_id> [дней]` - назначить тариф
     • `/admin_apply_tariff_limits <user_id>` - применить лимиты тарифа
-
-    ⚙️ **Управление лимитами:**
-    • `/admin_set_limits <user_id> <лимиты>` - установить любые лимиты
-    • `/admin_reset_limits <user_id>` - сбросить все лимиты
-    • `/admin_limits_help` - справка по лимитам
 
     🚫 **Управление блокировками:**
     • `/admin_block <user_id> [причина]` - заблокировать пользователя
@@ -556,13 +550,7 @@ class FriendBot:
     • `/admin_blocked_list` - список заблокированных
     • `/admin_block_info <user_id>` - информация о блокировке
 
-    📈 **Устаревшие команды (для совместимости):**
-    • `/admin_set_message_limits` - используйте `/admin_set_limits`
-    • `/admin_reset_message_limits` - используйте `/admin_reset_limits`
-
      **Примеры использования:**
-    `/admin_set_limits 123456789 messages_per_hour=50 max_message_length=3000`
-    `/admin_limits 123456789` - посмотреть все лимиты
     `/admin_message_stats 123456789` - статистика сообщений
 
     💡 **Примеры использования:**
@@ -707,69 +695,6 @@ class FriendBot:
         if not success:
             self.logger.error(f"Failed to send message stats to user {user_id}")
 
-    async def admin_set_message_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Установить лимиты сообщений для пользователя"""
-        user_id = update.effective_user.id
-
-        # Проверяем права администратора
-        if not self.manage_admin_uc.is_user_admin(user_id):
-            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
-            return
-
-        # Проверяем аргументы
-        if len(context.args) < 2:
-            success = await self._safe_reply(update,
-                                             "❌ Использование: /admin_set_message_limits <user_id> <параметр=значение> ...\n\n"
-                                             "Пример:\n"
-                                             "/admin_set_message_limits 123456789 max_message_length=5000\n"
-                                             "/admin_set_message_limits 123456789 max_context_messages=20 max_context_length=8000\n\n"
-                                             "Доступные параметры:\n"
-                                             "• max_message_length\n"
-                                             "• max_context_messages\n"
-                                             "• max_context_length"
-                                             )
-            return
-
-        try:
-            target_user_id = int(context.args[0])
-            limits = {}
-
-            # Парсим параметры
-            for arg in context.args[1:]:
-                if '=' in arg:
-                    key, value = arg.split('=', 1)
-                    # Преобразуем значения
-                    if value.isdigit():
-                        limits[key] = int(value)
-
-            success, message = self.validate_message_uc.update_user_limits(target_user_id, **limits)
-            await self._safe_reply(update, message)
-
-        except ValueError:
-            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя или параметров")
-
-    async def admin_reset_message_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Сбросить лимиты сообщений пользователя"""
-        user_id = update.effective_user.id
-
-        # Проверяем права администратора
-        if not self.manage_admin_uc.is_user_admin(user_id):
-            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
-            return
-
-        # Проверяем аргументы
-        if not context.args:
-            success = await self._safe_reply(update, "❌ Укажите ID пользователя: /admin_reset_message_limits <user_id>")
-            return
-
-        try:
-            target_user_id = int(context.args[0])
-            success, message = self.validate_message_uc.reset_user_limits(target_user_id)
-            await self._safe_reply(update, message)
-
-        except ValueError:
-            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
-
     async def admin_health(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
 
@@ -794,129 +719,6 @@ class FriendBot:
         success = await self._safe_reply(update, response)
         if not success:
             self.logger.error(f"Failed to send health status to user {user_id}")
-
-    async def admin_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать ВСЕ лимиты пользователя"""
-        user_id = update.effective_user.id
-
-        # Проверяем права администратора
-        if not self.manage_admin_uc.is_user_admin(user_id):
-            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
-            return
-
-        # Проверяем аргументы
-        if not context.args:
-            # Если аргументов нет, показываем свои лимиты
-            target_user_id = user_id
-        else:
-            try:
-                target_user_id = int(context.args[0])
-            except ValueError:
-                success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
-                return
-
-        # Получаем ВСЕ лимиты пользователя
-        user_limits = self.manage_user_limits_uc.get_all_limits(target_user_id)
-        limits_dict = user_limits.to_dict()
-
-        message = f"📊 **Все лимиты пользователя {target_user_id}:**\n\n"
-
-        # Рейт-лимиты
-        message += "🕒 **Рейт-лимиты:**\n"
-        rate_limits = limits_dict['rate_limits']
-        message += f"• В минуту: {rate_limits['messages_per_minute']} сообщений\n"
-        message += f"• В час: {rate_limits['messages_per_hour']} сообщений\n"
-        message += f"• В день: {rate_limits['messages_per_day']} сообщений\n\n"
-
-        # Лимиты сообщений
-        message += "📏 **Лимиты сообщений:**\n"
-        message_limits = limits_dict['message_limits']
-        message += f"• Макс. длина сообщения: {message_limits['max_message_length']} символов\n"
-        message += f"• Макс. сообщений в истории: {message_limits['max_context_messages']}\n"
-        message += f"• Макс. длина контекста: {message_limits['max_context_length']} символов\n\n"
-
-        message += "💡 Используйте `/admin_set_limits` для изменения"
-
-        success = await self._safe_reply(update, message)
-        if not success:
-            self.logger.error(f"Failed to send all limits to user {user_id}")
-
-    async def admin_set_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Установить ЛЮБЫЕ лимиты пользователя"""
-        user_id = update.effective_user.id
-
-        # Проверяем права администратора
-        if not self.manage_admin_uc.is_user_admin(user_id):
-            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
-            return
-
-        # Проверяем аргументы
-        if len(context.args) < 2:
-            help_text = self.manage_user_limits_uc.get_available_limits_info()
-            success = await self._safe_reply(update, help_text)
-            return
-
-        try:
-            target_user_id = int(context.args[0])
-            limits = {}
-
-            # Парсим все параметры
-            for arg in context.args[1:]:
-                if '=' in arg:
-                    key, value = arg.split('=', 1)
-                    # Преобразуем значения в числа
-                    if value.isdigit():
-                        limits[key] = int(value)
-                    else:
-                        success = await self._safe_reply(update, f"❌ Неверное значение для {key}: {value}")
-                        return
-
-            if not limits:
-                success = await self._safe_reply(update, "❌ Не указаны лимиты для изменения")
-                return
-
-            # Обновляем лимиты
-            success, message = self.manage_user_limits_uc.update_limits(target_user_id, **limits)
-            await self._safe_reply(update, message)
-
-        except ValueError:
-            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
-
-    async def admin_reset_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Сбросить ВСЕ лимиты пользователя"""
-        user_id = update.effective_user.id
-
-        # Проверяем права администратора
-        if not self.manage_admin_uc.is_user_admin(user_id):
-            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
-            return
-
-        # Проверяем аргументы
-        if not context.args:
-            success = await self._safe_reply(update, "❌ Укажите ID пользователя: /admin_reset_limits <user_id>")
-            return
-
-        try:
-            target_user_id = int(context.args[0])
-            success, message = self.manage_user_limits_uc.reset_all_limits(target_user_id)
-            await self._safe_reply(update, message)
-
-        except ValueError:
-            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
-
-    async def admin_limits_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать справку по лимитам"""
-        user_id = update.effective_user.id
-
-        # Проверяем права администратора
-        if not self.manage_admin_uc.is_user_admin(user_id):
-            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
-            return
-
-        help_text = self.manage_user_limits_uc.get_available_limits_info()
-        success = await self._safe_reply(update, help_text)
-        if not success:
-            self.logger.error(f"Failed to send limits help to user {user_id}")
 
     async def admin_assign_tariff(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Назначить тариф пользователю"""
@@ -1164,14 +966,6 @@ class FriendBot:
 
         # Команды управления лимитами сообщений
         self.application.add_handler(CommandHandler("admin_message_stats", self.admin_message_stats))
-        self.application.add_handler(CommandHandler("admin_set_message_limits", self.admin_set_message_limits))
-        self.application.add_handler(CommandHandler("admin_reset_message_limits", self.admin_reset_message_limits))
-
-        # ЕДИНЫЕ команды управления лимитами
-        self.application.add_handler(CommandHandler("admin_limits", self.admin_limits))
-        self.application.add_handler(CommandHandler("admin_set_limits", self.admin_set_limits))
-        self.application.add_handler(CommandHandler("admin_reset_limits", self.admin_reset_limits))
-        self.application.add_handler(CommandHandler("admin_limits_help", self.admin_limits_help))
 
         # Команды управления тарифами
         self.application.add_handler(CommandHandler("admin_assign_tariff", self.admin_assign_tariff))
