@@ -1,21 +1,7 @@
 from dataclasses import dataclass
 from typing import Dict, Any
-
-
-@dataclass
-class RateLimitConfig:
-    """Конфигурация рейт-лимитов"""
-    messages_per_minute: int = 10
-    messages_per_hour: int = 100
-    messages_per_day: int = 500
-
-
-@dataclass
-class MessageLimitConfig:
-    """Конфигурация лимитов сообщений"""
-    max_message_length: int = 2000
-    max_context_messages: int = 10
-    max_context_length: int = 4000
+from domain.entity.rate_limit import RateLimitConfig
+from domain.entity.message_limit import MessageLimitConfig
 
 
 @dataclass
