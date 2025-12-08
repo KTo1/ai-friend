@@ -970,7 +970,7 @@ class FriendBot:
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
         # ТЕПЕРЬ создаем proactive manager ПОСЛЕ создания application
-        self._setup_proactive_manager()
+        # self._setup_proactive_manager()
 
     def _setup_proactive_manager(self):
         """Настроить проактивные сообщения после создания application"""
