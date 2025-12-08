@@ -185,13 +185,14 @@ if __name__ == "__main__":
         ".",
         "project_structure_excluded.txt",
         exclude_dirs=['.git', '__pycache__', '.vscode', '.idea', 'venv', 'env', 'node_modules', '.github', 'grafana',
-                      'elk', 'postgres', 'logs', 'prometheus', 'tests'],
+                      'elk', 'postgres', 'logs', 'prometheus', 'tests', '.pytest_cache'],
         exclude_files=[
             'gemini_client.*',  # Исключить все файлы с расширением .log
             'huggingface_client.*',  # Исключить все файлы с расширением .log
             'ollama_client.*',  # Исключить все файлы с расширением .log
             'openai_client.*',  # Исключить все файлы с расширением .log
             'generate_struct.*',  # Исключить все файлы с расширением .log
+            '__init__.*',  # Исключить все файлы с расширением .log
             # 'config.json',  # Исключить конкретный файл в корне
             # '*.log',  # Исключить все файлы с расширением .log
             # 'secret_*',  # Исключить все файлы, начинающиеся с secret_

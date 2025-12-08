@@ -40,15 +40,12 @@ class HandleMessageUseCase:
                 system_prompt, context_messages, message
             )
 
-            # БЕЗОПАСНАЯ генерация ответа
+            # БЕЗОПАСНАЯ генерация ответа (теперь с правильными таймаутами)
             try:
-                bot_response = await asyncio.wait_for(
-                    self.ai_client.generate_response_safe(messages),
-                    timeout=120.0
-                )
-            except asyncio.TimeoutError:
-                self.logger.error("AI response timeout")
-                bot_response = "Извини, я слишком долго думаю... Попробуй написать еще раз! ⏰"
+                bot_response = await self.ai_client.generate_response_safe(messages)
+            except Exception as e:
+                self.logger.error(f"AI response error: {e}")
+                bot_response = "Извини, что-то пошло не так... Попробуй написать еще раз! 🔄"
 
             # Сохраняем ответ бота
             self.conversation_repo.save_message(user_id, "assistant", bot_response)

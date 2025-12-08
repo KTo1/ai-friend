@@ -240,11 +240,6 @@ class FriendBot:
         thread.start()
         self.logger.info("Proactive messages monitoring started")
 
-    def _check_proactive_messages(self):
-        """Проверить и отправить проактивные сообщения"""
-        # Здесь нужно получить список активных пользователей
-        # Для демо - просто логируем
-        self.logger.debug("Checking for proactive messages...")
 
     def _log_configuration(self):
         config_info = {
@@ -813,8 +808,6 @@ class FriendBot:
             extra={'user_id': user_id, 'message_length': len(user_message)}
         )
 
-        await self._send_typing_status(user_id)
-
         # ПРОВЕРКА БЛОКИРОВКИ ПОЛЬЗОВАТЕЛЯ
         if self.manage_block_uc.is_user_blocked(user_id):
             success = await self._safe_reply(update,
@@ -845,6 +838,8 @@ class FriendBot:
             self.proactive_manager.update_user_activity(user_id, user_message)
 
         try:
+            await self._send_typing_status(user_id)
+
             # Сохраняем пользователя (если еще не сохранен)
             existing_user = self.user_repo.get_user(user_id)
             if not existing_user:
@@ -986,7 +981,8 @@ class FriendBot:
                 conversation_repo=self.conversation_repo,
                 message_limit_service=self.message_limit_service,
                 ai_client=self.ai_client,
-                telegram_bot_instance=self  # ← Теперь self полностью создан
+                telegram_bot_instance=self,
+                check_interval=300# ← Теперь self полностью создан
             )
 
             # Запускаем мониторинг

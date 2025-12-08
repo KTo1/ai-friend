@@ -19,6 +19,11 @@ class DeepSeekClient(BaseAIClient, AIClientInterface):
         self._session = None
         self._session_lock = asyncio.Lock()
 
+        # Таймауты для запросов
+        self.connect_timeout = 10.0  # секунд
+        self.read_timeout = 30.0  # секунд
+        self.total_timeout = 60.0  # секунд
+
         if not self.api_key:
             self.logger.warning("DEEPSEEK_API_KEY not set - DeepSeek client will not work")
 
@@ -26,7 +31,12 @@ class DeepSeekClient(BaseAIClient, AIClientInterface):
         """Получить или создать aiohttp сессию (потокобезопасно)"""
         async with self._session_lock:
             if self._session is None or self._session.closed:
-                timeout = aiohttp.ClientTimeout(total=60)
+                # Используем ClientTimeout вместо asyncio.TimeoutError
+                timeout = aiohttp.ClientTimeout(
+                    connect=self.connect_timeout,
+                    sock_read=self.read_timeout,
+                    total=self.total_timeout
+                )
                 self._session = aiohttp.ClientSession(timeout=timeout)
             return self._session
 
@@ -59,22 +69,34 @@ class DeepSeekClient(BaseAIClient, AIClientInterface):
                 "stream": False
             }
 
-            async with session.post(
-                    f"{self.base_url}/chat/completions",
-                    json=payload,
-                    headers=headers
-            ) as response:
+            # Убираем обертку asyncio.wait_for, используем таймауты aiohttp
+            try:
+                async with session.post(
+                        f"{self.base_url}/chat/completions",
+                        json=payload,
+                        headers=headers
+                ) as response:
 
-                if response.status != 200:
-                    error_text = await response.text()
-                    self.logger.error(f"DeepSeek API error {response.status}: {error_text}")
-                    raise Exception(f"DeepSeek API error {response.status}: {error_text}")
+                    if response.status != 200:
+                        error_text = await response.text()
+                        self.logger.error(f"DeepSeek API error {response.status}: {error_text}")
+                        raise Exception(f"DeepSeek API error {response.status}: {error_text}")
 
-                result = await response.json()
+                    result = await response.json()
+
+            except asyncio.TimeoutError:
+                self.logger.error("DeepSeek API timeout (asyncio.TimeoutError)")
+                raise Exception("DeepSeek API timeout")
+            except aiohttp.ClientError as e:
+                self.logger.error(f"DeepSeek API client error: {e}")
+                raise Exception(f"DeepSeek API client error: {e}")
 
             duration = time.time() - start_time
             metrics_collector.record_processing_time("deepseek_api_call", duration)
             metrics_collector.record_openai_request("success")
+
+            if 'choices' not in result or not result['choices']:
+                raise Exception("DeepSeek API returned empty choices")
 
             bot_response = result['choices'][0]['message']['content'].strip()
 
@@ -91,9 +113,9 @@ class DeepSeekClient(BaseAIClient, AIClientInterface):
 
             return bot_response
 
-        except asyncio.TimeoutError:
-            self.logger.error("DeepSeek API timeout")
-            raise Exception("DeepSeek API timeout")
+        except asyncio.CancelledError:
+            self.logger.warning("DeepSeek API request cancelled")
+            raise
         except Exception as e:
             metrics_collector.record_openai_request("error")
             self.logger.error(
