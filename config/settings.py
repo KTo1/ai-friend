@@ -150,21 +150,6 @@ class MessageLimitConfig:
 
 
 @dataclass
-class ProactiveConfig:
-    @property
-    def check_interval(self):
-        return int(os.getenv("PROACTIVE_CHECK_INTERVAL", "600"))  # 10 минут
-
-    @property
-    def min_messages_for_activation(self):
-        return int(os.getenv("PROACTIVE_MIN_MESSAGES", "3"))
-
-    @property
-    def max_messages_per_day(self):
-        return int(os.getenv("PROACTIVE_MAX_PER_DAY", "2"))
-
-
-@dataclass
 class TelegramConfig:
     """Конфигурация для Telegram API rate limiting"""
     @property
@@ -202,7 +187,6 @@ class Config:
         self._monitoring = MonitoringConfig()
         self._bot = BotConfig()
         self._deepseek = DeepSeekConfig()
-        self._proactive = ProactiveConfig()
         self._telegram = TelegramConfig()
         self._rag = RAGConfig()
 
@@ -237,10 +221,6 @@ class Config:
     @property
     def message_limits(self):
         return MessageLimitConfig()
-
-    @property
-    def proactive(self):
-        return self._proactive
 
     @property
     def telegram(self):
