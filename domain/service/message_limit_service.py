@@ -88,32 +88,6 @@ class MessageLimitService:
         """Получить лимиты пользователя"""
         return self._get_or_create_user_limit(user_id)
 
-    def update_user_limits(self, user_id: int, **limits) -> bool:
-        """Обновить лимиты пользователя"""
-        user_limit = self._get_or_create_user_limit(user_id)
-
-        # Обновляем конфигурацию
-        for key, value in limits.items():
-            if hasattr(user_limit.config, key):
-                setattr(user_limit.config, key, value)
-
-        self._save_user_limit(user_limit)
-
-        self.logger.info(
-            f"Updated message limits for user {user_id}",
-            extra={'user_id': user_id, 'new_limits': limits}
-        )
-
-        return True
-
-    def reset_user_limits(self, user_id: int):
-        """Сбросить лимиты пользователя к значениям по умолчанию"""
-        if user_id in self._message_limits_cache:
-            del self._message_limits_cache[user_id]
-
-        self.message_limit_repo.delete_user_limit(user_id)
-        self.logger.info(f"Message limits reset for user {user_id}")
-
     def get_user_stats(self, user_id: int) -> Dict:
         """Получить статистику пользователя"""
         user_limit = self._get_or_create_user_limit(user_id)

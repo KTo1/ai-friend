@@ -27,14 +27,6 @@ class User:
         """Обновить время последней активности"""
         self.last_seen = datetime.now()
 
-    def promote_to_admin(self):
-        """Назначить пользователя администратором"""
-        self.is_admin = True
-
-    def demote_from_admin(self):
-        """Убрать права администратора"""
-        self.is_admin = False
-
     def block_user(self, blocked_by: int, reason: Optional[str] = None):
         """Заблокировать пользователя"""
         self.is_blocked = True

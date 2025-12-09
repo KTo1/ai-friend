@@ -176,6 +176,25 @@ class TelegramConfig:
         return int(os.getenv("TELEGRAM_BURST_LIMIT", "5"))
 
 
+@dataclass
+class RAGConfig:
+    @property
+    def enabled_by_default(self):
+        return os.getenv("RAG_ENABLED_BY_DEFAULT", "false").lower() == "true"
+
+    @property
+    def min_importance_threshold(self):
+        return float(os.getenv("RAG_MIN_IMPORTANCE", "0.3"))
+
+    @property
+    def max_memories_per_user(self):
+        return int(os.getenv("RAG_MAX_MEMORIES_PER_USER", "100"))
+
+    @property
+    def embedding_dimension(self):
+        return int(os.getenv("RAG_EMBEDDING_DIMENSION", "384"))
+
+
 class Config:
     def __init__(self):
         self._database = DatabaseConfig()
@@ -185,6 +204,7 @@ class Config:
         self._deepseek = DeepSeekConfig()
         self._proactive = ProactiveConfig()
         self._telegram = TelegramConfig()
+        self._rag = RAGConfig()
 
     @property
     def database(self):
@@ -225,6 +245,10 @@ class Config:
     @property
     def telegram(self):
         return self._telegram
+
+    @property
+    def rag(self):
+        return self._rag
 
 
 config = Config()

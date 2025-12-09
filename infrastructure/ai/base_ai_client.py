@@ -14,7 +14,7 @@ class BaseAIClient(ABC):
                                      temperature: float = 0.7) -> str:
         """Безопасная генерация ответа с ретраями и fallback"""
 
-        max_retries = 2
+        max_retries = 2  # Уменьшили количество ретраев
         fallback_responses = [
             "Привет! Как твои дела? 😊",
             "Извини, я немного занята. Расскажи, что у тебя нового? 🌟",
@@ -26,7 +26,9 @@ class BaseAIClient(ABC):
 
         for attempt in range(max_retries):
             try:
-                return await self.generate_response(messages, max_tokens, temperature)
+                # ПРОСТОЙ вызов без сложных таймаутов
+                response = await self.generate_response(messages, max_tokens, temperature)
+                return response
 
             except Exception as e:
                 self.logger.warning(f"Attempt {attempt + 1} failed: {e}")
@@ -37,6 +39,9 @@ class BaseAIClient(ABC):
                     self.logger.error(f"All attempts failed, using fallback: {e}")
                     # Возвращаем случайный fallback ответ
                     return random.choice(fallback_responses)
+
+        # Если все попытки исчерпаны, возвращаем fallback
+        return random.choice(fallback_responses)
 
     @abstractmethod
     async def generate_response(self, messages: List[Dict], max_tokens: int = None, temperature: float = None) -> str:

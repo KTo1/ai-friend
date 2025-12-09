@@ -3,7 +3,7 @@ import pathlib
 
 
 def get_project_structure(root_dir=".", output_file="project_structure.txt",
-                          exclude_dirs=None, include_dirs=None):
+                          exclude_dirs=None, include_dirs=None, exclude_files=None):
     """
     Создает текстовый файл со структурой проекта и листингом модулей
 
@@ -12,16 +12,21 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt",
         output_file (str): Имя выходного файла
         exclude_dirs (list): Список директорий для исключения
         include_dirs (list): Список директорий для включения (если None - включаем все)
+        exclude_files (list): Список файлов для исключения (можно указывать с путями или шаблонами)
     """
 
     if exclude_dirs is None:
         # Добавил .github, чтобы исключить стандартные CI/CD папки
-        exclude_dirs = ['.git', '__pycache__', '.vscode', '.idea', 'venv', 'env', 'node_modules', '.github']
+        exclude_dirs = []
+
+    if exclude_files is None:
+        exclude_files = []
 
     if include_dirs is None:
         include_dirs = []  # Пустой список означает "включать всё"
 
     root_path = pathlib.Path(root_dir)
+
     # Определяем типы файлов, для которых будем выводить содержимое и отображать в структуре
     supported_suffixes = ['.py', '.md', '.yml', '.yaml', '.json', '.env', '.conf', '.dockerignore']
 
@@ -38,6 +43,8 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt",
             f.write(f"ВКЛЮЧЕНЫ ПАПКИ: {', '.join(include_dirs)}\n")
         if exclude_dirs:
             f.write(f"ИСКЛЮЧЕНЫ ПАПКИ: {', '.join(exclude_dirs)}\n")
+        if exclude_files:
+            f.write(f"ИСКЛЮЧЕНЫ ФАЙЛЫ: {', '.join(exclude_files)}\n")
         f.write("=" * 60 + "\n\n")
 
         # Собираем структуру и файлы для листинга
@@ -71,6 +78,34 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt",
                     is_included = True
 
                 if not is_included:
+                    continue
+
+            # Проверка исключения конкретных файлов
+            if exclude_files:
+                should_exclude = False
+                relative_path = file_path.relative_to(root_path)
+
+                for exclude_pattern in exclude_files:
+                    # Если исключаемый путь - это абсолютный путь или начинается с /
+                    if '/' in exclude_pattern or '\\' in exclude_pattern:
+                        # Проверяем совпадение с путем относительно корня
+                        if str(relative_path) == exclude_pattern or str(relative_path).startswith(
+                                exclude_pattern.rstrip('*')):
+                            should_exclude = True
+                            break
+                    # Иначе проверяем только имя файла
+                    else:
+                        if file_path.name == exclude_pattern:
+                            should_exclude = True
+                            break
+                        # Проверка на шаблон с *
+                        elif '*' in exclude_pattern:
+                            import fnmatch
+                            if fnmatch.fnmatch(file_path.name, exclude_pattern):
+                                should_exclude = True
+                                break
+
+                if should_exclude:
                     continue
 
             relative_path = file_path.relative_to(root_path)
@@ -125,6 +160,8 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt",
         print(f"📁 Включены папки: {', '.join(include_dirs)}")
     if exclude_dirs:
         print(f"🚫 Исключены папки: {', '.join(exclude_dirs)}")
+    if exclude_files:
+        print(f"🚫 Исключены файлы: {', '.join(exclude_files)}")
 
 
 if __name__ == "__main__":
@@ -142,7 +179,30 @@ if __name__ == "__main__":
         include_dirs=['application', 'presentation']  # Укажите нужные папки
     )
 
+    # 3. С исключением конкретных файлов
+    print("\nСоздание версии с исключением файлов...")
+    get_project_structure(
+        ".",
+        "project_structure_excluded.txt",
+        exclude_dirs=['.git', '__pycache__', '.vscode', '.idea', 'venv', 'env', 'node_modules', '.github', 'grafana',
+                      'elk', 'postgres', 'logs', 'prometheus', 'tests', '.pytest_cache'],
+        exclude_files=[
+            'gemini_client.*',  # Исключить все файлы с расширением .log
+            'huggingface_client.*',  # Исключить все файлы с расширением .log
+            'ollama_client.*',  # Исключить все файлы с расширением .log
+            'openai_client.*',  # Исключить все файлы с расширением .log
+            'generate_struct.*',  # Исключить все файлы с расширением .log
+            '__init__.*',  # Исключить все файлы с расширением .log
+            # 'config.json',  # Исключить конкретный файл в корне
+            # '*.log',  # Исключить все файлы с расширением .log
+            # 'secret_*',  # Исключить все файлы, начинающиеся с secret_
+            # 'application/config.py',  # Исключить конкретный файл с путем
+            # 'temp/',  # Исключить все файлы в папке temp
+        ]
+    )
+
     print("\n🎯 Теперь вы можете отправить мне:")
     print("   • project_structure_full.txt - если нужен полный код")
     print("   • project_structure_filtered.txt - отфильтрованная версия")
+    print("   • project_structure_excluded.txt - с исключением файлов")
     print("\n💡 Рекомендую начать с компактной версии, чтобы не перегружать меня!")

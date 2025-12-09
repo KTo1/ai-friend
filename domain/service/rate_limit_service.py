@@ -108,14 +108,6 @@ class RateLimitService:
             }
         }
 
-    def reset_user_limits(self, user_id: int):
-        """Сбросить лимиты пользователя"""
-        if user_id in self._rate_limits_cache:
-            del self._rate_limits_cache[user_id]
-
-        self.rate_limit_repo.delete_rate_limit(user_id)
-        self.logger.info(f"Rate limits reset for user {user_id}")
-
     def _get_or_create_rate_limit(self, user_id: int) -> UserRateLimit:
         """Получить или создать трекер лимитов для пользователя"""
         if user_id in self._rate_limits_cache:

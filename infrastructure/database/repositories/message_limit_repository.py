@@ -85,10 +85,3 @@ class MessageLimitRepository:
                 print(f"Error loading message limit for user {user_id}: {e}")
 
         return None
-
-    def delete_user_limit(self, user_id: int):
-        """Удалить лимиты пользователя"""
-        self.db.execute_query(
-            'DELETE FROM user_message_limits WHERE user_id = %s',
-            (user_id,)
-        )

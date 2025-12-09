@@ -3,7 +3,7 @@ version: '3.3'
 services:
   # PostgreSQL база данных
   postgres:
-    image: postgres:15
+    image: pgvector/pgvector:pg15
     environment:
       POSTGRES_DB: ${DB_NAME:-ai-friend}
       POSTGRES_USER: ${DB_USER:-postgres}

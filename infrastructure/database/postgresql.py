@@ -50,6 +50,33 @@ class PostgreSQLDatabase:
         """Инициализация базы данных и создание таблиц"""
         try:
             with self.get_cursor() as cursor:
+                # Включение расширения vector для векторных операций
+                cursor.execute(''' CREATE EXTENSION IF NOT EXISTS vector; ''')
+
+                # Таблица для RAG памяти (уже создается в коде, но можно добавить и здесь)
+                cursor.execute(''' 
+                    CREATE TABLE IF NOT EXISTS user_rag_memories (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    memory_type VARCHAR(40) NOT NULL,
+                    content TEXT NOT NULL,
+                    source_message TEXT,
+                    importance_score FLOAT DEFAULT 0.5,
+                    embedding vector(384), -- Используем расширение vector
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    metadata JSONB DEFAULT '{}',
+                    
+                    CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+                    );
+                ''')
+
+                #  Индексы для эффективного поиска
+                cursor.execute(''' CREATE INDEX IF NOT EXISTS idx_rag_memories_user_id ON user_rag_memories(user_id);''')
+                cursor.execute(''' CREATE INDEX IF NOT EXISTS idx_rag_memories_importance ON user_rag_memories(importance_score DESC); ''')
+                cursor.execute(''' CREATE INDEX IF NOT EXISTS idx_rag_memories_type ON user_rag_memories(memory_type); ''')
+                cursor.execute(''' CREATE INDEX IF NOT EXISTS idx_rag_memories_embedding ON user_rag_memories USING ivfflat (embedding vector_cosine_ops); ''')
+
                 # Таблица пользователей
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS users (
