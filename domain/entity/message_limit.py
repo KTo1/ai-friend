@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import os
 
 
 @dataclass
@@ -12,15 +13,10 @@ class MessageLimitConfig:
     def from_env(cls) -> 'MessageLimitConfig':
         """Создать конфигурацию из переменных окружения"""
         return cls(
-            max_message_length=int(cls._get_env("DEFAULT_MAX_MESSAGE_LENGTH", "2000")),
-            max_context_messages=int(cls._get_env("DEFAULT_MAX_CONTEXT_MESSAGES", "10")),
-            max_context_length=int(cls._get_env("DEFAULT_MAX_CONTEXT_LENGTH", "4000"))
+            max_message_length=int(os.getenv("DEFAULT_MAX_MESSAGE_LENGTH", "2000")),
+            max_context_messages=int(os.getenv("DEFAULT_MAX_CONTEXT_MESSAGES", "10")),
+            max_context_length=int(os.getenv("DEFAULT_MAX_CONTEXT_LENGTH", "4000"))
         )
-
-    @staticmethod
-    def _get_env(key: str, default: str) -> str:
-        import os
-        return os.getenv(key, default)
 
 
 @dataclass

@@ -5,7 +5,6 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 from infrastructure.database.database import Database
-from infrastructure.database.repositories.proactive_repository import ProactiveRepository
 from infrastructure.database.repositories.user_repository import UserRepository
 from infrastructure.database.repositories.profile_repository import ProfileRepository
 from infrastructure.database.repositories.conversation_repository import ConversationRepository
@@ -18,8 +17,6 @@ from infrastructure.monitoring.health_check import HealthChecker
 from application.use_case.start_conversation import StartConversationUseCase
 from application.use_case.manage_profile import ManageProfileUseCase
 from application.use_case.handle_message import HandleMessageUseCase
-
-from application.use_case.manage_proactive_messages import ProactiveMessageManager
 
 from presentation.telegram.middleware import TelegramMiddleware
 
@@ -137,17 +134,17 @@ FRIEND_PROMPT = """
 
 class FriendBot:
     def __init__(self):
-        setup_logging()
-        self.logger = StructuredLogger("friend_bot")
-
+        self.application = None
+        self._setup_logging()
         self._log_configuration()
+
+        self._setup_monitoring()
 
         # Инициализация инфраструктуры
         self.database = Database()
         self.user_repo = UserRepository(self.database)
         self.profile_repo = ProfileRepository(self.database)
         self.conversation_repo = ConversationRepository(self.database)
-        self.proactive_repo = ProactiveRepository(self.database)
         self.rate_limit_repo = RateLimitRepository(self.database)
         self.message_limit_repo = MessageLimitRepository(self.database)
         self.tariff_repo = TariffRepository(self.database)
@@ -165,8 +162,6 @@ class FriendBot:
         self.rag_service = RAGService(self.ai_client)
 
         self.health_checker = HealthChecker(self.database)
-
-        self._setup_monitoring()
 
         # Инициализация Telegram rate limiter и sender
         self.telegram_sender = get_telegram_sender()
@@ -190,9 +185,6 @@ class FriendBot:
         self.manage_rag_uc = ManageRAGUseCase(self.rag_repo, self.rag_service)
 
         self.middleware = TelegramMiddleware()
-
-        # Инициализация проактивных сообщений
-        self.proactive_manager = None
 
         self.logger.info("FriendBot initialized successfully")
 
@@ -227,20 +219,6 @@ class FriendBot:
             self.application.bot, chat_id, text, **kwargs
         )
 
-    def _start_proactive_monitoring(self):
-        """Запустить мониторинг проактивных сообщений"""
-        import threading
-
-        def start_async_monitoring():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(self.proactive_manager.start_monitoring())
-
-        thread = threading.Thread(target=start_async_monitoring, daemon=True)
-        thread.start()
-        self.logger.info("Proactive messages monitoring started")
-
-
     def _log_configuration(self):
         config_info = {
             'ai_provider': os.getenv("AI_PROVIDER", "ollama"),
@@ -269,6 +247,10 @@ class FriendBot:
     def _setup_monitoring(self):
         metrics_collector.start_metrics_server()
         trace_manager.setup_tracing()
+
+    def _setup_logging(self):
+        setup_logging()
+        self.logger = StructuredLogger("friend_bot")
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
@@ -833,10 +815,6 @@ class FriendBot:
                 success = await self._safe_reply(update, limit_message)
                 return
 
-        # Обновляем активность пользователя для проактивных сообщений
-        if self.proactive_manager:
-            self.proactive_manager.update_user_activity(user_id, user_message)
-
         try:
             await self._send_typing_status(user_id)
 
@@ -969,29 +947,6 @@ class FriendBot:
 
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
-        # ТЕПЕРЬ создаем proactive manager ПОСЛЕ создания application
-        self._setup_proactive_manager()
-
-    def _setup_proactive_manager(self):
-        """Настроить проактивные сообщения после создания application"""
-        try:
-            self.proactive_manager = ProactiveMessageManager(
-                proactive_repo=self.proactive_repo,
-                profile_repo=self.profile_repo,
-                conversation_repo=self.conversation_repo,
-                message_limit_service=self.message_limit_service,
-                ai_client=self.ai_client,
-                telegram_bot_instance=self,
-                check_interval=300# ← Теперь self полностью создан
-            )
-
-            # Запускаем мониторинг
-            self._start_proactive_monitoring()
-            self.logger.info("Proactive manager initialized")
-
-        except Exception as e:
-            self.logger.error(f"Failed to setup proactive manager: {e}")
-
     async def cleanup(self):
         """Корректное завершение работы"""
         self.logger.info("Cleaning up resources...")
@@ -999,11 +954,6 @@ class FriendBot:
         # Закрываем AI клиенты
         if hasattr(self, 'ai_client'):
             await self.ai_client.close()
-
-        # Закрываем сессии HTTP клиентов
-        if hasattr(self, 'proactive_manager') and self.proactive_manager:
-            if hasattr(self.proactive_manager.ai_client, 'close'):
-                await self.proactive_manager.ai_client.close()
 
         self.logger.info("Cleanup completed")
 
@@ -1033,7 +983,7 @@ class FriendBot:
             signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
             signal.signal(signal.SIGTERM, signal_handler)  # systemd stop
 
-            self.application.run_polling()
+            self.application.run_polling(timeout=30)
 
         except Exception as e:
             self.logger.error(f"Failed to start bot: {e}")
