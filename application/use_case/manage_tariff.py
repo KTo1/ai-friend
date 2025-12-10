@@ -1,5 +1,4 @@
-from typing import List, Tuple, Optional, Dict, Any
-from domain.entity.tariff_plan import TariffPlan, UserTariff
+from typing import Tuple, Any
 from domain.service.tariff_service import TariffService
 from infrastructure.monitoring.tracing import trace_span
 from infrastructure.monitoring.logging import StructuredLogger
@@ -56,7 +55,7 @@ class ManageTariffUseCase:
 
         message += f"• Статус: {'Активен' if user_tariff.is_active else 'Неактивен'}\n\n"
 
-        # ИНФОРМАЦИЯ О ЛИМИТАХ ТАРИФА - ИСПРАВЛЕННЫЕ ПУТИ К ДАННЫМ
+        # ИНФОРМАЦИЯ О ЛИМИТАХ ТАРИФА
         tariff = user_tariff.tariff_plan
         message += "🕒 **Рейт-лимиты:**\n"
         message += f"• В минуту: {tariff.rate_limits.messages_per_minute} сообщений\n"
@@ -70,22 +69,7 @@ class ManageTariffUseCase:
 
         return message
 
-    @trace_span("usecase.apply_tariff_limits", attributes={"component": "application"})
-    def apply_tariff_limits_to_user(self, user_id: int, user_limits_uc: Any) -> Tuple[bool, str]:
-        """
-        Применить лимиты тарифа к пользователю
-        user_limits_uc - это ManageUserLimitsUseCase
-        """
-        return self.tariff_service.apply_tariff_limits_to_user(
-            user_id, user_limits_uc
-        )
-
     @trace_span("usecase.remove_user_tariff", attributes={"component": "application"})
     def remove_user_tariff(self, user_id: int) -> Tuple[bool, str]:
         """Удалить тариф пользователя"""
         return self.tariff_service.remove_user_tariff(user_id)
-
-    @trace_span("usecase.create_tariff", attributes={"component": "application"})
-    def create_tariff_plan(self, **tariff_data) -> Tuple[bool, str]:
-        """Создать новый тарифный план"""
-        return self.tariff_service.create_tariff_plan(**tariff_data)

@@ -1,9 +1,7 @@
 import json
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from datetime import datetime
-from domain.entity.tariff_plan import TariffPlan, UserTariff
-from domain.entity.rate_limit import RateLimitConfig
-from domain.entity.message_limit import MessageLimitConfig
+from domain.entity.tariff_plan import TariffPlan, UserTariff, RateLimitConfig, MessageLimitConfig
 from infrastructure.database.database import Database
 from infrastructure.monitoring.logging import StructuredLogger
 
@@ -18,48 +16,86 @@ class TariffRepository:
 
     def _init_tables(self):
         """Инициализация таблиц тарифов"""
-        # Таблицы уже созданы в PostgreSQL инициализации
-        self._create_default_tariffs()
+        try:
+            # Таблица тарифных планов
+            self.db.execute_query('''
+                CREATE TABLE IF NOT EXISTS tariff_plans (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL UNIQUE,
+                    description TEXT,
+                    price FLOAT DEFAULT 0,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    is_default BOOLEAN DEFAULT FALSE,
+                    rate_limits JSONB NOT NULL,
+                    message_limits JSONB NOT NULL,
+                    features JSONB DEFAULT '{}',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Таблица пользовательских тарифов
+            self.db.execute_query('''
+                CREATE TABLE IF NOT EXISTS user_tariffs (
+                    user_id BIGINT PRIMARY KEY,
+                    tariff_plan_id INTEGER NOT NULL,
+                    activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP,
+                    is_active BOOLEAN DEFAULT TRUE,
+
+                    CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+                    CONSTRAINT fk_tariff_plan FOREIGN KEY (tariff_plan_id) REFERENCES tariff_plans(id)
+                )
+            ''')
+
+            self._create_default_tariffs()
+
+        except Exception as e:
+            self.logger.error(f"Error initializing tariff tables: {e}")
 
     def _create_default_tariffs(self):
         """Создать тарифы по умолчанию если их нет"""
         default_tariffs = [
-            TariffPlan(
-                id=0,  # Auto-increment
-                name='Бесплатный',
-                description='Базовый тариф для новых пользователей',
-                price=0,
-                rate_limits=RateLimitConfig(messages_per_minute=2, messages_per_hour=10, messages_per_day=20),
-                message_limits=MessageLimitConfig(max_message_length=100, max_context_messages=10,
-                                                  max_context_length=1200),
-                is_default=True,
-                features={'support': 'basic'}
-            ),
-            TariffPlan(
-                id=0,
-                name='Стандартный',
-                description='Популярный тариф для активных пользователей',
-                price=1199,
-                rate_limits=RateLimitConfig(messages_per_minute=10, messages_per_hour=100, messages_per_day=500),
-                message_limits=MessageLimitConfig(max_message_length=500, max_context_messages=20,
-                                                  max_context_length=2400),
-                features={'support': 'priority'}
-            ),
-            TariffPlan(
-                id=0,
-                name='Премиум',
-                description='Максимальные возможности для профессионалов',
-                price=2799,
-                rate_limits=RateLimitConfig(messages_per_minute=20, messages_per_hour=200, messages_per_day=1000),
-                message_limits=MessageLimitConfig(max_message_length=5000, max_context_messages=30,
-                                                  max_context_length=8000),
-                features={'support': '24/7'}
-            )
+            {
+                'name': 'Бесплатный',
+                'description': 'Базовый тариф для новых пользователей',
+                'price': 0,
+                'rate_limits': RateLimitConfig(messages_per_minute=2, messages_per_hour=10, messages_per_day=20),
+                'message_limits': MessageLimitConfig(max_message_length=1000, max_context_messages=10, max_context_length=2000),
+                'is_default': True,
+                'features': {'support': 'basic'}
+            },
+            {
+                'name': 'Стандартный',
+                'description': 'Популярный тариф для активных пользователей',
+                'price': 1199,
+                'rate_limits': RateLimitConfig(messages_per_minute=10, messages_per_hour=100, messages_per_day=500),
+                'message_limits': MessageLimitConfig(max_message_length=5000, max_context_messages=20, max_context_length=5000),
+                'features': {'support': 'priority'}
+            },
+            {
+                'name': 'Премиум',
+                'description': 'Максимальные возможности для профессионалов',
+                'price': 2799,
+                'rate_limits': RateLimitConfig(messages_per_minute=20, messages_per_hour=200, messages_per_day=1000),
+                'message_limits': MessageLimitConfig(max_message_length=10000, max_context_messages=30, max_context_length=10000),
+                'features': {'support': '24/7'}
+            }
         ]
 
-        for tariff in default_tariffs:
-            existing = self.db.fetch_one('SELECT id FROM tariff_plans WHERE name = %s', (tariff.name,))
+        for tariff_data in default_tariffs:
+            existing = self.db.fetch_one('SELECT id FROM tariff_plans WHERE name = %s', (tariff_data['name'],))
             if not existing:
+                tariff = TariffPlan(
+                    id=0,
+                    name=tariff_data['name'],
+                    description=tariff_data['description'],
+                    price=tariff_data['price'],
+                    rate_limits=tariff_data['rate_limits'],
+                    message_limits=tariff_data['message_limits'],
+                    is_default=tariff_data.get('is_default', False),
+                    features=tariff_data.get('features', {})
+                )
                 self.save_tariff_plan(tariff)
 
     def save_tariff_plan(self, tariff: TariffPlan) -> int:
@@ -89,13 +125,10 @@ class TariffRepository:
                 json.dumps(data['rate_limits']), json.dumps(data['message_limits']),
                 json.dumps(data['features']), datetime.utcnow()
             ))
-            # Получаем ID из результата
-            if hasattr(result, '__getitem__') and 'id' in result:
+
+            if result and hasattr(result, '__getitem__') and 'id' in result:
                 return result['id']
-            elif hasattr(result, 'lastrowid'):
-                return result.lastrowid
             else:
-                # Если не можем получить ID, делаем запрос для получения последнего ID
                 last_id = self.db.fetch_one("SELECT LASTVAL() as id")
                 return last_id['id'] if last_id else 0
         else:  # Обновление существующего
@@ -229,12 +262,10 @@ class TariffRepository:
     def _parse_tariff_plan(self, row) -> TariffPlan:
         """Парсинг тарифного плана из строки БД"""
         try:
-            # В PostgreSQL с JSONB поля уже являются словарями Python
             rate_limits_data = row['rate_limits']
             message_limits_data = row['message_limits']
             features_data = row['features'] if row['features'] else {}
 
-            # Если данные пришли как строка (старая версия), парсим JSON
             if isinstance(rate_limits_data, str):
                 rate_limits_data = json.loads(rate_limits_data)
             if isinstance(message_limits_data, str):
@@ -243,15 +274,15 @@ class TariffRepository:
                 features_data = json.loads(features_data) if features_data else {}
 
             rate_limits = RateLimitConfig(
-                messages_per_minute=rate_limits_data.get('messages_per_minute', 5),
-                messages_per_hour=rate_limits_data.get('messages_per_hour', 50),
-                messages_per_day=rate_limits_data.get('messages_per_day', 200)
+                messages_per_minute=rate_limits_data.get('messages_per_minute', 2),
+                messages_per_hour=rate_limits_data.get('messages_per_hour', 15),
+                messages_per_day=rate_limits_data.get('messages_per_day', 30)
             )
 
             message_limits = MessageLimitConfig(
-                max_message_length=message_limits_data.get('max_message_length', 1000),
-                max_context_messages=message_limits_data.get('max_context_messages', 5),
-                max_context_length=message_limits_data.get('max_context_length', 2000)
+                max_message_length=message_limits_data.get('max_message_length', 2000),
+                max_context_messages=message_limits_data.get('max_context_messages', 10),
+                max_context_length=message_limits_data.get('max_context_length', 4000)
             )
 
             return TariffPlan(
@@ -281,7 +312,6 @@ class TariffRepository:
 
         if isinstance(dt_value, str):
             try:
-                # PostgreSQL возвращает datetime в формате ISO
                 return datetime.fromisoformat(dt_value.replace('Z', '+00:00'))
             except Exception:
                 return datetime.utcnow()

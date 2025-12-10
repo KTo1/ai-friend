@@ -130,29 +130,6 @@ class PostgreSQLDatabase:
                     )
                 ''')
 
-                # Таблица лимитов сообщений
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS user_message_limits (
-                        user_id BIGINT PRIMARY KEY REFERENCES users(user_id),
-                        config JSONB NOT NULL,
-                        total_messages_processed INTEGER DEFAULT 0,
-                        total_characters_processed INTEGER DEFAULT 0,
-                        average_message_length REAL DEFAULT 0.0,
-                        rejected_messages_count INTEGER DEFAULT 0,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-
-                # Таблица рейт-лимитов
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS user_rate_limits (
-                        user_id BIGINT PRIMARY KEY REFERENCES users(user_id),
-                        message_counts JSONB NOT NULL,
-                        last_reset JSONB NOT NULL,
-                        config JSONB NOT NULL,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
 
                 # Таблица тарифных планов
                 cursor.execute('''

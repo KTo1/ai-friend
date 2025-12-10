@@ -1,7 +1,7 @@
+# 📄 domain/service/tariff_service.py
 from typing import List, Optional, Tuple, Dict, Any
 from datetime import datetime, timedelta
 from domain.entity.tariff_plan import TariffPlan, UserTariff
-from domain.entity.user_limits import UserLimits
 from infrastructure.database.repositories.tariff_repository import TariffRepository
 from infrastructure.monitoring.logging import StructuredLogger
 
@@ -28,29 +28,6 @@ class TariffService:
     def get_default_tariff(self) -> Optional[TariffPlan]:
         """Получить тариф по умолчанию"""
         return self.tariff_repo.get_default_tariff_plan()
-
-    def create_tariff_plan(self, **tariff_data) -> Tuple[bool, str]:
-        """Создать новый тарифный план"""
-        try:
-            tariff = TariffPlan(
-                id=0,
-                name=tariff_data['name'],
-                description=tariff_data.get('description', ''),
-                price=tariff_data.get('price', 0),
-                rate_limits=tariff_data['rate_limits'],
-                message_limits=tariff_data['message_limits'],
-                is_active=tariff_data.get('is_active', True),
-                is_default=tariff_data.get('is_default', False),
-                features=tariff_data.get('features', {})
-            )
-
-            tariff_id = self.tariff_repo.save_tariff_plan(tariff)
-            self.logger.info(f"Created tariff plan: {tariff.name} (ID: {tariff_id})")
-            return True, f"✅ Тарифный план '{tariff.name}' создан (ID: {tariff_id})"
-
-        except Exception as e:
-            self.logger.error(f"Error creating tariff plan: {e}")
-            return False, f"❌ Ошибка при создании тарифного плана: {str(e)}"
 
     def assign_tariff_to_user(self, user_id: int, tariff_plan_id: int,
                               duration_days: int = None) -> Tuple[bool, str]:
@@ -84,53 +61,6 @@ class TariffService:
     def get_user_tariff(self, user_id: int) -> Optional[UserTariff]:
         """Получить тариф пользователя"""
         return self.tariff_repo.get_user_tariff(user_id)
-
-    def apply_tariff_limits_to_user(self, user_id: int, user_limits_uc: Any) -> Tuple[bool, str]:
-        """
-        Применить лимиты тарифа к пользователю.
-        user_limits_uc - это ManageUserLimitsUseCase
-        """
-        try:
-            user_tariff = self.get_user_tariff(user_id)
-            if not user_tariff or not user_tariff.tariff_plan:
-                # Если у пользователя нет тарифа, назначаем тариф по умолчанию
-                default_tariff = self.get_default_tariff()
-                if default_tariff:
-                    self.assign_tariff_to_user(user_id, default_tariff.id)
-                    user_tariff = self.get_user_tariff(user_id)
-                else:
-                    return False, "❌ Не найден тариф по умолчанию"
-
-            # 1. Получаем текущие лимиты пользователя (UserLimits object)
-            user_limits = user_limits_uc.get_all_limits(user_id)
-
-            # 2. Применяем лимиты тарифа (in-memory)
-            user_tariff.tariff_plan.apply_to_user_limits(user_limits)
-
-            # 3. Собираем ВСЕ лимиты в один словарь
-            all_limits_to_update = {
-                # Rate limits
-                'messages_per_minute': user_limits.rate_limits.messages_per_minute,
-                'messages_per_hour': user_limits.rate_limits.messages_per_hour,
-                'messages_per_day': user_limits.rate_limits.messages_per_day,
-                # Message limits
-                'max_message_length': user_limits.message_limits.max_message_length,
-                'max_context_messages': user_limits.message_limits.max_context_messages,
-                'max_context_length': user_limits.message_limits.max_context_length
-            }
-
-            # 4. Обновляем все лимиты ОДНИМ вызовом
-            success, message = user_limits_uc.update_limits(user_id, **all_limits_to_update)
-
-            if not success:
-                raise Exception(message)  # Передаем ошибку дальше
-
-            self.logger.info(f"Applied tariff limits to user {user_id}")
-            return True, f"✅ Лимиты тарифа '{user_tariff.tariff_plan.name}' применены к пользователю {user_id}"
-
-        except Exception as e:
-            self.logger.error(f"Error applying tariff limits to user {user_id}: {e}")
-            return False, f"❌ Ошибка при применении лимитов тарифа: {str(e)}"
 
     def remove_user_tariff(self, user_id: int) -> Tuple[bool, str]:
         """Удалить тариф пользователя"""

@@ -1,9 +1,111 @@
-import os
 import pathlib
+import ast
+
+
+def strip_python_code(content):
+    """
+    Удаляет докстроки и комментарии из Python-кода
+
+    Args:
+        content (str): Исходный Python-код
+
+    Returns:
+        str: Очищенный Python-код
+    """
+    try:
+        # Парсим AST для удаления докстрок
+        tree = ast.parse(content)
+
+        # Удаляем docstring из модуля
+        if hasattr(tree, 'body') and tree.body:
+            first_expr = tree.body[0]
+            if isinstance(first_expr, ast.Expr) and isinstance(first_expr.value, ast.Str):
+                tree.body = tree.body[1:]
+
+        # Обходим все узлы AST и удаляем docstring из функций и классов
+        for node in ast.walk(tree):
+            # Для функций и методов
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.body and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Str):
+                    node.body = node.body[1:]
+            # Для классов
+            elif isinstance(node, ast.ClassDef):
+                if node.body and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Str):
+                    node.body = node.body[1:]
+
+        # Преобразуем обратно в код
+        cleaned_content = ast.unparse(tree) if hasattr(ast, 'unparse') else ast.dump(tree)
+
+        # Удаляем однострочные комментарии
+        lines = cleaned_content.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            # Удаляем комментарии, но не удаляем пустые строки для сохранения структуры
+            if '#' in line:
+                # Разделяем строку по комментарию и берем только код до него
+                code_part = line.split('#')[0]
+                if code_part.strip():  # Если остался код, добавляем его
+                    cleaned_lines.append(code_part.rstrip())
+                else:
+                    # Пустая строка вместо строки с комментарием
+                    cleaned_lines.append('')
+            else:
+                cleaned_lines.append(line.rstrip())
+
+        # Удаляем пустые строки в начале и конце файла
+        cleaned_content = '\n'.join(cleaned_lines)
+        cleaned_content = cleaned_content.strip()
+
+        return cleaned_content
+
+    except (SyntaxError, ValueError) as e:
+        # Если не удалось распарсить, используем простой метод удаления комментариев
+        print(f"  ⚠️  Внимание: не удалось обработать Python-файл через AST: {e}")
+
+        # Простой метод удаления комментариев через регулярные выражения
+        # Удаляем однострочные комментарии
+        lines = content.split('\n')
+        cleaned_lines = []
+        in_multiline_comment = False
+        multiline_comment_type = None  # ' или """
+
+        for line in lines:
+            stripped = line.strip()
+
+            # Пропускаем пустые строки и строки, содержащие только комментарии
+            if not stripped or stripped.startswith('#'):
+                continue
+
+            # Проверяем многострочные комментарии
+            if stripped.startswith('"""') or stripped.startswith("'''"):
+                if stripped.count('"""') == 2 or stripped.count("'''") == 2:
+                    # Однострочный многострочный комментарий - пропускаем
+                    continue
+                else:
+                    # Начало многострочного комментария
+                    in_multiline_comment = True
+                    multiline_comment_type = stripped[:3]
+                    continue
+
+            if in_multiline_comment:
+                if multiline_comment_type in line:
+                    in_multiline_comment = False
+                continue
+
+            # Удаляем встроенные комментарии
+            if '#' in line:
+                code_part = line.split('#')[0]
+                if code_part.strip():
+                    cleaned_lines.append(code_part.rstrip())
+            else:
+                cleaned_lines.append(line.rstrip())
+
+        return '\n'.join(cleaned_lines)
 
 
 def get_project_structure(root_dir=".", output_file="project_structure.txt",
-                          exclude_dirs=None, include_dirs=None, exclude_files=None):
+                          exclude_dirs=None, include_dirs=None, exclude_files=None,
+                          strip_docstrings_and_comments=False):
     """
     Создает текстовый файл со структурой проекта и листингом модулей
 
@@ -13,6 +115,7 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt",
         exclude_dirs (list): Список директорий для исключения
         include_dirs (list): Список директорий для включения (если None - включаем все)
         exclude_files (list): Список файлов для исключения (можно указывать с путями или шаблонами)
+        strip_docstrings_and_comments (bool): Если True, удаляет докстроки и комментарии из Python-файлов
     """
 
     if exclude_dirs is None:
@@ -45,6 +148,8 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt",
             f.write(f"ИСКЛЮЧЕНЫ ПАПКИ: {', '.join(exclude_dirs)}\n")
         if exclude_files:
             f.write(f"ИСКЛЮЧЕНЫ ФАЙЛЫ: {', '.join(exclude_files)}\n")
+        if strip_docstrings_and_comments:
+            f.write("РЕЖИМ: УДАЛЕНЫ ДОКСТРОКИ И КОММЕНТАРИИ ИЗ PYTHON-ФАЙЛОВ\n")
         f.write("=" * 60 + "\n\n")
 
         # Собираем структуру и файлы для листинга
@@ -145,8 +250,26 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt",
             try:
                 with open(file_path, 'r', encoding='utf-8') as pf:
                     content = pf.read()
+
                     if content.strip():
-                        f.write(content + "\n")
+                        # Если флаг установлен и это Python-файл, очищаем код
+                        if strip_docstrings_and_comments and file_path.suffix == '.py':
+                            original_length = len(content)
+                            cleaned_content = strip_python_code(content)
+                            cleaned_length = len(cleaned_content)
+
+                            # # Добавляем информацию о сжатии
+                            # compression_info = ""
+                            # if original_length > 0:
+                            #     compression_ratio = (1 - cleaned_length / original_length) * 100
+                            #     compression_info = f"\n# 🔥 Сжатие: {compression_ratio:.1f}% ({original_length} → {cleaned_length} символов)\n\n"
+                            # else:
+                            #     compression_info = "\n# 🔥 Файл обработан (удалены докстроки и комментарии)\n\n"
+                            #
+                            # f.write(compression_info)
+                            f.write(cleaned_content + "\n")
+                        else:
+                            f.write(content + "\n")
                     else:
                         f.write("# (пустой файл)\n")
             except Exception as e:
@@ -154,6 +277,9 @@ def get_project_structure(root_dir=".", output_file="project_structure.txt",
 
     print(f"✅ Структура проекта сохранена в: {output_file}")
     print(f"📊 Найдено файлов для листинга: {len(files_to_list)}")
+
+    if strip_docstrings_and_comments:
+        print("🔥 Режим: удалены докстроки и комментарии из Python-файлов")
 
     # Информация о примененных фильтрах
     if include_dirs:
@@ -201,8 +327,29 @@ if __name__ == "__main__":
         ]
     )
 
+    # 4. С удалением докстрок и комментариев (только для Python файлов)
+    print("\nСоздание версии с удалением докстрок и комментариев...")
+    get_project_structure(
+        ".",
+        "project_structure_compact.txt",
+        exclude_dirs=['.git', '__pycache__', '.vscode', '.idea', 'venv', 'env', 'node_modules', '.github', 'grafana',
+                      'elk', 'postgres', 'logs', 'prometheus', 'tests', '.pytest_cache'],
+        exclude_files=[
+            'gemini_client.*',
+            'huggingface_client.*',
+            'ollama_client.*',
+            'openai_client.*',
+            'generate_struct.*',
+            '__init__.*',
+            '*.log',
+            '*.pyc',
+        ],
+        strip_docstrings_and_comments=True  # <-- НОВЫЙ ФЛАГ
+    )
+
     print("\n🎯 Теперь вы можете отправить мне:")
     print("   • project_structure_full.txt - если нужен полный код")
     print("   • project_structure_filtered.txt - отфильтрованная версия")
     print("   • project_structure_excluded.txt - с исключением файлов")
+    print("   • project_structure_compact.txt - компактная версия без докстрок и комментариев")
     print("\n💡 Рекомендую начать с компактной версии, чтобы не перегружать меня!")
