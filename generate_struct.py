@@ -1,7 +1,5 @@
-import os
 import pathlib
 import ast
-import re
 
 
 def strip_python_code(content):
