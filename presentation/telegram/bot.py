@@ -4,10 +4,17 @@ import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
+from presentation.telegram.middleware import TelegramMiddleware
+
 from infrastructure.database.database import Database
 from infrastructure.database.repositories.user_repository import UserRepository
 from infrastructure.database.repositories.profile_repository import ProfileRepository
 from infrastructure.database.repositories.conversation_repository import ConversationRepository
+from infrastructure.database.repositories.tariff_repository import TariffRepository
+from infrastructure.database.repositories.rag_repository import RAGRepository
+from infrastructure.database.repositories.user_stats_repository import UserStatsRepository
+from infrastructure.database.repositories.rate_limit_tracking_repository import RateLimitTrackingRepository
+
 from infrastructure.ai.ai_factory import AIFactory
 from infrastructure.monitoring.logging import setup_logging, StructuredLogger
 from infrastructure.monitoring.metrics import metrics_collector
@@ -18,35 +25,21 @@ from application.use_case.start_conversation import StartConversationUseCase
 from application.use_case.manage_profile import ManageProfileUseCase
 from application.use_case.handle_message import HandleMessageUseCase
 
-from presentation.telegram.middleware import TelegramMiddleware
-
-from infrastructure.database.repositories.rate_limit_repository import RateLimitRepository
-from domain.service.rate_limit_service import RateLimitService
-from application.use_case.check_rate_limit import CheckRateLimitUseCase
-
 from domain.service.admin_service import AdminService
-from application.use_case.manage_admin import ManageAdminUseCase
-
 from domain.service.block_service import BlockService
-from application.use_case.manage_block import ManageBlockUseCase
-
-from infrastructure.database.repositories.message_limit_repository import MessageLimitRepository
-from domain.service.message_limit_service import MessageLimitService
-from application.use_case.validate_message import ValidateMessageUseCase
-
-from application.use_case.manage_user_limits import ManageUserLimitsUseCase
-
-from infrastructure.database.repositories.tariff_repository import TariffRepository
 from domain.service.tariff_service import TariffService
+from domain.service.rag_service import RAGService
+from domain.service.limit_service import LimitService
+
+from application.use_case.manage_admin import ManageAdminUseCase
+from application.use_case.manage_block import ManageBlockUseCase
+from application.use_case.manage_user_limits import ManageUserLimitsUseCase
 from application.use_case.manage_tariff import ManageTariffUseCase
+from application.use_case.manage_rag import ManageRAGUseCase
+from application.use_case.check_limits import CheckLimitsUseCase
 
 # Импорты для Telegram rate limiting
 from presentation.telegram.message_sender import get_telegram_sender, get_telegram_rate_limiter
-
-from infrastructure.database.repositories.rag_repository import RAGRepository
-from domain.service.rag_service import RAGService
-from application.use_case.manage_rag import ManageRAGUseCase
-
 
 # gpt
 FRIEND_PROMPT = """
@@ -145,10 +138,10 @@ class FriendBot:
         self.user_repo = UserRepository(self.database)
         self.profile_repo = ProfileRepository(self.database)
         self.conversation_repo = ConversationRepository(self.database)
-        self.rate_limit_repo = RateLimitRepository(self.database)
-        self.message_limit_repo = MessageLimitRepository(self.database)
         self.tariff_repo = TariffRepository(self.database)
         self.rag_repo = RAGRepository(self.database)
+        self.user_stats_repo = UserStatsRepository(self.database)
+        self.rate_limit_tracking_repo = RateLimitTrackingRepository(self.database)
 
         # Используем фабрику для создания AI клиента!
         self.ai_client = AIFactory.create_client()
@@ -156,10 +149,12 @@ class FriendBot:
         # Инициализация бизнес-логики
         self.admin_service = AdminService(self.user_repo)
         self.block_service = BlockService(self.user_repo)
-        self.rate_limit_service = RateLimitService(self.rate_limit_repo)
-        self.message_limit_service = MessageLimitService(self.message_limit_repo)
         self.tariff_service = TariffService(self.tariff_repo)
         self.rag_service = RAGService(self.ai_client)
+        self.limit_service = LimitService(
+            self.rate_limit_tracking_repo,
+            self.user_stats_repo
+        )
 
         self.health_checker = HealthChecker(self.database)
 
@@ -170,19 +165,16 @@ class FriendBot:
         # Инициализация use cases с правильными зависимостями
         self.start_conversation_uc = StartConversationUseCase(self.user_repo, self.profile_repo)
         self.manage_profile_uc = ManageProfileUseCase(self.profile_repo, self.ai_client)
-        self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.ai_client,
-                                                      self.message_limit_service)
-        self.check_rate_limit_uc = CheckRateLimitUseCase(self.rate_limit_service)
+        self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.ai_client)
         self.manage_admin_uc = ManageAdminUseCase(self.admin_service)
         self.manage_block_uc = ManageBlockUseCase(self.block_service)
-        self.validate_message_uc = ValidateMessageUseCase(self.message_limit_service)
+
         # Единый use case для управления лимитами
-        self.manage_user_limits_uc = ManageUserLimitsUseCase(
-            self.rate_limit_service,
-            self.message_limit_service
-        )
+        self.manage_user_limits_uc = ManageUserLimitsUseCase(self.user_stats_repo)
+
         self.manage_tariff_uc = ManageTariffUseCase(self.tariff_service)
         self.manage_rag_uc = ManageRAGUseCase(self.rag_repo, self.rag_service)
+        self.check_limits_uc = CheckLimitsUseCase(self.limit_service)
 
         self.middleware = TelegramMiddleware()
 
@@ -300,17 +292,36 @@ class FriendBot:
 
         self.logger.info("Limits command received", extra={'user_id': user_id})
 
-        limits_info = self.check_rate_limit_uc.get_limits_info(user_id)
+        # Получаем тариф пользователя
+        user_tariff = self.tariff_service.get_user_tariff(user_id)
+        if not user_tariff or not user_tariff.tariff_plan:
+            success = await self._safe_reply(update,
+                                             "❌ Не удалось определить ваш тарифный план.\n"
+                                             "Используйте /start для инициализации.")
+            return
 
-        message = "📊 Твои лимиты сообщений:\n\n"
+        tariff = user_tariff.tariff_plan
+
+        # Получаем информацию о лимитах
+        limits_info = self.check_limits_uc.get_limits_info(user_id, tariff)
+
+        message = f"📊 **Тариф: {tariff.name}**\n\n"
+        message += f"💰 Цена: {tariff.price} руб./месяц\n\n"
+
+        message += "🕒 **Текущее использование:**\n"
         message += f"• В минуту: {limits_info['current']['minute']}/{limits_info['limits']['minute']}\n"
         message += f"• В час: {limits_info['current']['hour']}/{limits_info['limits']['hour']}\n"
         message += f"• В день: {limits_info['current']['day']}/{limits_info['limits']['day']}\n\n"
 
-        message += "⏳ Сброс через:\n"
+        message += "⏳ **Сброс через:**\n"
         message += f"• Минута: {limits_info['time_until_reset']['minute']}\n"
         message += f"• Час: {limits_info['time_until_reset']['hour']}\n"
         message += f"• День: {limits_info['time_until_reset']['day']}\n\n"
+
+        message += "📏 **Лимиты сообщений:**\n"
+        message += f"• Макс. длина: {tariff.message_limits.max_message_length} символов\n"
+        message += f"• История: {tariff.message_limits.max_context_messages} сообщений\n"
+        message += f"• Контекст: {tariff.message_limits.max_context_length} символов\n\n"
 
         message += "Лимиты защищают от перегрузки и помогают мне работать стабильно 💫"
 
@@ -655,18 +666,34 @@ class FriendBot:
                 success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
                 return
 
-        stats = self.validate_message_uc.get_user_stats(target_user_id)
+        # Получаем статистику через обновленный use case
+        stats = self.manage_user_limits_uc.get_user_stats(target_user_id)
+
+        # Получаем тариф пользователя для отображения лимитов
+        user_tariff = self.tariff_service.get_user_tariff(target_user_id)
+        tariff_info = None
+        if user_tariff and user_tariff.tariff_plan:
+            tariff_info = self.manage_user_limits_uc.get_tariff_limits_info(user_tariff.tariff_plan)
 
         message = f"📊 **Статистика сообщений пользователя {target_user_id}:**\n\n"
         message += f"• Всего сообщений: {stats['total_messages']}\n"
         message += f"• Всего символов: {stats['total_characters']}\n"
         message += f"• Средняя длина: {stats['average_length']} символов\n"
-        message += f"• Отклонено сообщений: {stats['rejected_messages']}\n\n"
+        message += f"• Отклонено сообщений: {stats['rejected_messages']}\n"
+        message += f"• Попаданий в rate limit: {stats['rate_limit_hits']}\n"
 
-        message += "📏 **Лимиты:**\n"
-        message += f"• Макс. длина сообщения: {stats['limits']['max_message_length']}\n"
-        message += f"• Макс. сообщений в контексте: {stats['limits']['max_context_messages']}\n"
-        message += f"• Макс. длина контекста: {stats['limits']['max_context_length']}\n"
+        if stats['last_message_at']:
+            from datetime import datetime
+            last_msg = stats['last_message_at']
+            if isinstance(last_msg, str):
+                last_msg = datetime.fromisoformat(last_msg.replace('Z', '+00:00'))
+            message += f"• Последнее сообщение: {last_msg.strftime('%d.%m.%Y %H:%M')}\n"
+
+        if tariff_info:
+            message += "\n📏 **Лимиты тарифа:**\n"
+            message += f"• Макс. длина сообщения: {tariff_info['message_limits']['max_message_length']}\n"
+            message += f"• Макс. сообщений в контексте: {tariff_info['message_limits']['max_context_messages']}\n"
+            message += f"• Макс. длина контекста: {tariff_info['message_limits']['max_context_length']}\n"
 
         success = await self._safe_reply(update, message)
         if not success:
@@ -790,7 +817,6 @@ class FriendBot:
             extra={'user_id': user_id, 'message_length': len(user_message)}
         )
 
-        # ПРОВЕРКА БЛОКИРОВКИ ПОЛЬЗОВАТЕЛЯ
         if self.manage_block_uc.is_user_blocked(user_id):
             success = await self._safe_reply(update,
                                              "🚫 Вы заблокированы и не можете отправлять сообщения.\n\n"
@@ -798,19 +824,32 @@ class FriendBot:
                                              )
             return
 
-        # ОБНОВЛЯЕМ АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЯ
         self.user_repo.update_last_seen(user_id)
 
-        # ВАЛИДАЦИЯ ДЛИНЫ СООБЩЕНИЯ (для всех пользователей)
-        is_valid, error_msg = self.validate_message_uc.execute(user_id, user_message)
+        user_tariff = self.tariff_service.get_user_tariff(user_id)
+        if not user_tariff or not user_tariff.tariff_plan:
+            default_tariff = self.tariff_service.get_default_tariff()
+            if default_tariff:
+                self.tariff_service.assign_tariff_to_user(user_id, default_tariff.id)
+                user_tariff = self.tariff_service.get_user_tariff(user_id)
 
+        if not user_tariff or not user_tariff.tariff_plan:
+            success = await self._safe_reply(update,
+                                             "❌ Не удалось определить ваш тарифный план.\n"
+                                             "Пожалуйста, свяжитесь с администратором.")
+            return
+
+        tariff = user_tariff.tariff_plan
+
+        is_valid, error_msg = self.check_limits_uc.check_message_length(
+            user_id, user_message, tariff
+        )
         if not is_valid:
             success = await self._safe_reply(update, error_msg)
             return
 
-        # ПРОВЕРКА ЛИМИТОВ (только для обычных пользователей)
         if not self.manage_admin_uc.is_user_admin(user_id):
-            can_send, limit_message = self.check_rate_limit_uc.execute(user_id)
+            can_send, limit_message, _ = self.check_limits_uc.check_rate_limit(user_id, tariff)
             if not can_send:
                 success = await self._safe_reply(update, limit_message)
                 return
@@ -825,15 +864,7 @@ class FriendBot:
                     self.middleware.create_user_from_telegram(user)
                 )
 
-            # ПРОВЕРКА ТАРИФА ДЛЯ RAG
-            user_tariff = self.tariff_service.get_user_tariff(user.id)
-            tariff_plan = user_tariff.tariff_plan if user_tariff else None
-
-            # RAG доступен только на платных тарифах (не бесплатный)
-            # выглядит так как будто это надо перенести в response = await self.handle_message_uc.execute(
-            # изачально факты извлекаись из истории соообщений, что неверно, туда попадали и сообщения бота.
-            #  но может это и подйет, надо проверить и так и так а пока я отсавлю только сообщение пользователя
-            rag_enabled = tariff_plan and tariff_plan.is_rag_enabled()
+            rag_enabled = tariff and tariff.is_rag_enabled()
             rag_context = ""
             if rag_enabled:
                 # Извлекаем и сохраняем воспоминания (асинхронно)
@@ -863,14 +894,16 @@ class FriendBot:
             # Извлекаем и обновляем профиль
             profile_data = await self.manage_profile_uc.extract_and_update_profile(user_id, user_message)
 
-            # Обрабатываем сообщение (АСИНХРОННО!)
+            # Обрабатываем сообщение с передачей лимита контекста из тарифа
             response = await self.handle_message_uc.execute(
-                user_id, user_message, enhanced_system_prompt
+                user_id,
+                user_message,
+                enhanced_system_prompt,
+                max_context_messages=tariff.message_limits.max_context_messages  # ← лимит из тарифа!
             )
 
-            # ЗАПИСЫВАЕМ ИСПОЛЬЗОВАНИЕ СООБЩЕНИЯ (только для обычных пользователей)
             if not self.manage_admin_uc.is_user_admin(user_id):
-                self.check_rate_limit_uc.record_message_usage(user_id)
+                self.check_limits_uc.record_message_usage(user_id, len(user_message), tariff)
 
             success = await self._safe_reply(update, response)
             if not success:

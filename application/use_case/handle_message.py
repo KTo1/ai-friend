@@ -1,37 +1,41 @@
-import asyncio
 from domain.service.context_service import ContextService
 from domain.interfaces.ai_client import AIClientInterface
-from domain.service.message_limit_service import MessageLimitService
 from infrastructure.database.repositories.conversation_repository import ConversationRepository
-from infrastructure.monitoring.metrics import metrics_collector, Timer
+from infrastructure.monitoring.metrics import metrics_collector
 from infrastructure.monitoring.tracing import trace_span
 from infrastructure.monitoring.logging import StructuredLogger
 
 
 class HandleMessageUseCase:
-    def __init__(self, conversation_repository: ConversationRepository, ai_client: AIClientInterface,  message_limit_service: MessageLimitService):
+    def __init__(self, conversation_repository: ConversationRepository,
+                 ai_client: AIClientInterface):
         self.conversation_repo = conversation_repository
         self.ai_client = ai_client
-        self.message_limit_service = message_limit_service
         self.context_service = ContextService()
         self.logger = StructuredLogger("handle_message_uc")
 
     @trace_span("usecase.handle_message", attributes={"component": "application"})
-    async def execute(self, user_id: int, message: str, system_prompt: str) -> str:
+    async def execute(self, user_id: int, message: str, system_prompt: str,
+                     max_context_messages: int = 10) -> str:
         """Обработать сообщение пользователя (асинхронно)"""
         try:
             metrics_collector.record_message_received("text")
-
             import time
             start_time = time.time()
 
-            # Сохраняем сообщение пользователя
-            self.conversation_repo.save_message(user_id, "user", message)
+            # Сохраняем сообщение пользователя с учетом лимита контекста
+            self.conversation_repo.save_message(
+                user_id,
+                "user",
+                message,
+                max_context_messages=max_context_messages
+            )
 
-            message_limits = self.message_limit_service.get_user_limits(user_id)
-
-            # Получаем контекст разговора
-            context_messages = self.conversation_repo.get_conversation_context(user_id, message_limits.config.max_context_messages) or []
+            # Получаем контекст разговора с учетом лимита из тарифа
+            context_messages = self.conversation_repo.get_conversation_context(
+                user_id,
+                max_context_messages=max_context_messages
+            ) or []
 
             metrics_collector.record_conversation_length(len(context_messages))
 
@@ -40,15 +44,20 @@ class HandleMessageUseCase:
                 system_prompt, context_messages, message
             )
 
-            # БЕЗОПАСНАЯ генерация ответа (теперь с правильными таймаутами)
+            # БЕЗОПАСНАЯ генерация ответа
             try:
                 bot_response = await self.ai_client.generate_response_safe(messages)
             except Exception as e:
                 self.logger.error(f"AI response error: {e}")
                 bot_response = "Извини, что-то пошло не так... Попробуй написать еще раз! 🔄"
 
-            # Сохраняем ответ бота
-            self.conversation_repo.save_message(user_id, "assistant", bot_response)
+            # Сохраняем ответ бота с учетом лимита контекста
+            self.conversation_repo.save_message(
+                user_id,
+                "assistant",
+                bot_response,
+                max_context_messages=max_context_messages
+            )
 
             duration = time.time() - start_time
             metrics_collector.record_processing_time("message_processing", duration)
@@ -60,7 +69,8 @@ class HandleMessageUseCase:
                     'user_id': user_id,
                     'message_length': len(message),
                     'response_length': len(bot_response),
-                    'duration_ms': duration * 1000
+                    'duration_ms': duration * 1000,
+                    'max_context_messages': max_context_messages
                 }
             )
 

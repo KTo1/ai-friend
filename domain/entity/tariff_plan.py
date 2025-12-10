@@ -1,14 +1,28 @@
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 from datetime import datetime
-from domain.entity.rate_limit import RateLimitConfig
-from domain.entity.message_limit import MessageLimitConfig
+
+
+@dataclass
+class RateLimitConfig:
+    """Конфигурация рейт-лимитов для тарифа"""
+    messages_per_minute: int = 2
+    messages_per_hour: int = 15
+    messages_per_day: int = 30
+
+
+@dataclass
+class MessageLimitConfig:
+    """Конфигурация лимитов сообщений для тарифа"""
+    max_message_length: int = 2000
+    max_context_messages: int = 10
+    max_context_length: int = 4000
 
 
 @dataclass
 class TariffPlan:
-    """Тарифный план с настройками лимитов"""
-    # Обязательные аргументы (без значений по умолчанию)
+    """Тарифный план со всеми лимитами"""
+    # Обязательные аргументы
     id: int
     name: str
     description: str
@@ -60,18 +74,6 @@ class TariffPlan:
             'updated_at': self.updated_at.isoformat(),
             'rag_enabled': self.is_rag_enabled(),
         }
-
-    def apply_to_user_limits(self, user_limits) -> None:
-        """Применить лимиты тарифа к лимитам пользователя"""
-        # Копируем рейт-лимиты
-        user_limits.rate_limits.messages_per_minute = self.rate_limits.messages_per_minute
-        user_limits.rate_limits.messages_per_hour = self.rate_limits.messages_per_hour
-        user_limits.rate_limits.messages_per_day = self.rate_limits.messages_per_day
-
-        # Копируем лимиты сообщений
-        user_limits.message_limits.max_message_length = self.message_limits.max_message_length
-        user_limits.message_limits.max_context_messages = self.message_limits.max_context_messages
-        user_limits.message_limits.max_context_length = self.message_limits.max_context_length
 
 
 @dataclass

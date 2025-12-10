@@ -1,3 +1,4 @@
+# 📄 application/use_case/manage_tariff.py
 from typing import List, Tuple, Optional, Dict, Any
 from domain.entity.tariff_plan import TariffPlan, UserTariff
 from domain.service.tariff_service import TariffService
@@ -56,7 +57,7 @@ class ManageTariffUseCase:
 
         message += f"• Статус: {'Активен' if user_tariff.is_active else 'Неактивен'}\n\n"
 
-        # ИНФОРМАЦИЯ О ЛИМИТАХ ТАРИФА - ИСПРАВЛЕННЫЕ ПУТИ К ДАННЫМ
+        # ИНФОРМАЦИЯ О ЛИМИТАХ ТАРИФА
         tariff = user_tariff.tariff_plan
         message += "🕒 **Рейт-лимиты:**\n"
         message += f"• В минуту: {tariff.rate_limits.messages_per_minute} сообщений\n"
@@ -74,11 +75,9 @@ class ManageTariffUseCase:
     def apply_tariff_limits_to_user(self, user_id: int, user_limits_uc: Any) -> Tuple[bool, str]:
         """
         Применить лимиты тарифа к пользователю
-        user_limits_uc - это ManageUserLimitsUseCase
+        user_limits_uc - это ManageUserLimitsUseCase (обновленный)
         """
-        return self.tariff_service.apply_tariff_limits_to_user(
-            user_id, user_limits_uc
-        )
+        return self.tariff_service.apply_tariff_limits_to_user(user_id, user_limits_uc)
 
     @trace_span("usecase.remove_user_tariff", attributes={"component": "application"})
     def remove_user_tariff(self, user_id: int) -> Tuple[bool, str]:
