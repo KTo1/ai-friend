@@ -1,6 +1,4 @@
-# 📄 application/use_case/manage_tariff.py
-from typing import List, Tuple, Optional, Dict, Any
-from domain.entity.tariff_plan import TariffPlan, UserTariff
+from typing import Tuple, Any
 from domain.service.tariff_service import TariffService
 from infrastructure.monitoring.tracing import trace_span
 from infrastructure.monitoring.logging import StructuredLogger
@@ -71,20 +69,7 @@ class ManageTariffUseCase:
 
         return message
 
-    @trace_span("usecase.apply_tariff_limits", attributes={"component": "application"})
-    def apply_tariff_limits_to_user(self, user_id: int, user_limits_uc: Any) -> Tuple[bool, str]:
-        """
-        Применить лимиты тарифа к пользователю
-        user_limits_uc - это ManageUserLimitsUseCase (обновленный)
-        """
-        return self.tariff_service.apply_tariff_limits_to_user(user_id, user_limits_uc)
-
     @trace_span("usecase.remove_user_tariff", attributes={"component": "application"})
     def remove_user_tariff(self, user_id: int) -> Tuple[bool, str]:
         """Удалить тариф пользователя"""
         return self.tariff_service.remove_user_tariff(user_id)
-
-    @trace_span("usecase.create_tariff", attributes={"component": "application"})
-    def create_tariff_plan(self, **tariff_data) -> Tuple[bool, str]:
-        """Создать новый тарифный план"""
-        return self.tariff_service.create_tariff_plan(**tariff_data)

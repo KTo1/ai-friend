@@ -261,10 +261,7 @@ class FriendBot:
                     success, message = self.tariff_service.assign_tariff_to_user(user.id, default_tariff.id)
                     if success:
                         self.logger.info(f"Assigned default tariff '{default_tariff.name}' to new user {user.id}")
-                        # Применяем лимиты тарифа
-                        self.manage_tariff_uc.apply_tariff_limits_to_user(
-                            user.id, self.manage_user_limits_uc
-                        )
+
         except Exception as e:
             self.logger.error(f"Error assigning tariff to new user {user.id}: {e}")
 
@@ -345,10 +342,6 @@ class FriendBot:
             if default_tariff:
                 success, message = self.tariff_service.assign_tariff_to_user(user_id, default_tariff.id)
                 if success:
-                    # Применяем лимиты тарифа
-                    self.manage_tariff_uc.apply_tariff_limits_to_user(
-                        user_id, self.manage_user_limits_uc
-                    )
                     user_tariff = self.tariff_service.get_user_tariff(user_id)
 
             if not user_tariff:
@@ -530,7 +523,6 @@ class FriendBot:
 
     💰 **Управление тарифами:**
     • `/admin_assign_tariff <user_id> <tariff_id> [дней]` - назначить тариф
-    • `/admin_apply_tariff_limits <user_id>` - применить лимиты тарифа
 
     🚫 **Управление блокировками:**
     • `/admin_block <user_id> [причина]` - заблокировать пользователя
@@ -752,14 +744,6 @@ class FriendBot:
             )
             await self._safe_reply(update, message)
 
-            # Автоматически применяем лимиты тарифа
-            if success:
-                apply_success, apply_message = self.manage_tariff_uc.apply_tariff_limits_to_user(
-                    target_user_id, self.manage_user_limits_uc
-                )
-                if apply_success:
-                    await self._safe_reply(update, apply_message)
-
         except ValueError:
             success = await self._safe_reply(update, "❌ Неверный формат параметров")
 
@@ -785,27 +769,6 @@ class FriendBot:
         success = await self._safe_reply(update, message)
         if not success:
             self.logger.error(f"Failed to send user tariff info to user {user_id}")
-
-    async def admin_apply_tariff_limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Применить лимиты тарифа к пользователю"""
-        user_id = update.effective_user.id
-
-        if not self.manage_admin_uc.is_user_admin(user_id):
-            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
-            return
-
-        if not context.args:
-            success = await self._safe_reply(update, "❌ Укажите ID пользователя: /admin_apply_tariff_limits <user_id>")
-            return
-
-        try:
-            target_user_id = int(context.args[0])
-            success, message = self.manage_tariff_uc.apply_tariff_limits_to_user(
-                target_user_id, self.manage_user_limits_uc
-            )
-            await self._safe_reply(update, message)
-        except ValueError:
-            success = await self._safe_reply(update, "❌ Неверный формат ID пользователя")
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
@@ -976,7 +939,6 @@ class FriendBot:
         # Команды управления тарифами
         self.application.add_handler(CommandHandler("admin_assign_tariff", self.admin_assign_tariff))
         self.application.add_handler(CommandHandler("admin_user_tariff", self.admin_user_tariff))
-        self.application.add_handler(CommandHandler("admin_apply_tariff_limits", self.admin_apply_tariff_limits))
 
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 

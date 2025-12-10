@@ -54,37 +54,6 @@ class ManageUserLimitsUseCase:
             }
         }
 
-    @trace_span("usecase.apply_tariff_limits", attributes={"component": "application"})
-    def apply_tariff_limits(self, user_id: int, tariff: TariffPlan) -> Tuple[bool, str]:
-        """
-        Применить лимиты тарифа к пользователю.
-        В новой архитектуре этот метод только логирует применение тарифа,
-        так как лимиты теперь проверяются непосредственно из тарифа.
-        """
-        try:
-            self.logger.info(
-                f"Tariff limits applied to user {user_id}",
-                extra={
-                    'user_id': user_id,
-                    'tariff_name': tariff.name,
-                    'rate_limits': {
-                        'minute': tariff.rate_limits.messages_per_minute,
-                        'hour': tariff.rate_limits.messages_per_hour,
-                        'day': tariff.rate_limits.messages_per_day
-                    },
-                    'message_limits': {
-                        'max_length': tariff.message_limits.max_message_length,
-                        'max_context': tariff.message_limits.max_context_messages
-                    }
-                }
-            )
-
-            return True, f"✅ Лимиты тарифа '{tariff.name}' применены к пользователю {user_id}"
-
-        except Exception as e:
-            self.logger.error(f"Error applying tariff limits to user {user_id}: {e}")
-            return False, f"❌ Ошибка при применении лимитов тарифа: {str(e)}"
-
     @trace_span("usecase.update_user_stats", attributes={"component": "application"})
     def update_user_stats(self, user_id: int, **stats_data) -> bool:
         """Обновить статистику пользователя"""
