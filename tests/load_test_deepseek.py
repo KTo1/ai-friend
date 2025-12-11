@@ -70,28 +70,20 @@ class DeepSeekLoadTester:
             from infrastructure.database.repositories.user_repository import UserRepository
             from infrastructure.database.repositories.profile_repository import ProfileRepository
             from infrastructure.database.repositories.conversation_repository import ConversationRepository
-            from infrastructure.database.repositories.rate_limit_repository import RateLimitRepository
-            from infrastructure.database.repositories.message_limit_repository import MessageLimitRepository
 
             self.user_repo = UserRepository(self.database)
             self.profile_repo = ProfileRepository(self.database)
             self.conversation_repo = ConversationRepository(self.database)
-            self.rate_limit_repo = RateLimitRepository(self.database)
-            self.message_limit_repo = MessageLimitRepository(self.database)
 
             # Инициализация AI клиента (DeepSeek)
             from infrastructure.ai.ai_factory import AIFactory
             self.ai_client = AIFactory.create_client()
 
             # Инициализация сервисов
-            from domain.service.rate_limit_service import RateLimitService
-            from domain.service.message_limit_service import MessageLimitService
             from domain.service.admin_service import AdminService
             from domain.service.block_service import BlockService
             from domain.service.profile_service import ProfileService
 
-            self.rate_limit_service = RateLimitService(self.rate_limit_repo)
-            self.message_limit_service = MessageLimitService(self.message_limit_repo)
             self.admin_service = AdminService(self.user_repo)
             self.block_service = BlockService(self.user_repo)
             self.profile_service = ProfileService(self.ai_client)
@@ -100,13 +92,11 @@ class DeepSeekLoadTester:
             from application.use_case.start_conversation import StartConversationUseCase
             from application.use_case.manage_profile import ManageProfileUseCase
             from application.use_case.handle_message import HandleMessageUseCase
-            from application.use_case.check_rate_limit import CheckRateLimitUseCase
-            from application.use_case.validate_message import ValidateMessageUseCase
 
             self.start_conversation_uc = StartConversationUseCase(self.user_repo, self.profile_repo)
             self.manage_profile_uc = ManageProfileUseCase(self.profile_repo, self.ai_client)
             self.handle_message_uc = HandleMessageUseCase(
-                self.conversation_repo, self.ai_client, self.message_limit_service
+                self.conversation_repo, self.ai_client
             )
             self.check_rate_limit_uc = CheckRateLimitUseCase(self.rate_limit_service)
             self.validate_message_uc = ValidateMessageUseCase(self.message_limit_service)
