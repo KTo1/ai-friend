@@ -103,8 +103,7 @@ class RAGService:
                     memory_type=MemoryType(mem_data['type']),
                     content=mem_data['content'],
                     source_message=message,
-                    importance_score=mem_data['importance'],
-                    metadata={'extracted_from': 'current_message_only'}
+                    importance_score=mem_data['importance']
                 )
                 memories.append(memory)
 
@@ -120,62 +119,16 @@ class RAGService:
             return []
 
     async def generate_embeddings(self, memories: List[RAGMemory]) -> List[RAGMemory]:
-        """Генерация эмбеддингов для воспоминаний"""
         try:
             for memory in memories:
                 if memory.embedding is None:
-                    # Используем DeepSeek для генерации эмбеддингов
-                    embedding = await self._get_embedding(memory.content)
+                    # Используем метод get_embedding из ai_client
+                    embedding = await self.ai_client.get_embedding(memory.content)
                     memory.embedding = embedding
-
             return memories
         except Exception as e:
-            self.logger.error(f"Error generating embeddings: {e}")
+            self.logger.error(f'Error generating embeddings: {e}')
             return memories
-
-    async def _get_embedding(self, text: str) -> List[float]:
-        """Получить эмбеддинг текста через DeepSeek"""
-        # Для DeepSeek используем их API для эмбеддингов
-        # Временно используем упрощенный подход - позже можно интегрировать с embeddings API
-        prompt = f"""
-        Преобразуй следующий текст в числовой вектор для семантического поиска.
-        Текст: "{text}"
-
-        Верни ТОЛЬКО JSON с массивом из 384 чисел:
-        {{"embedding": [число1, число2, ...]}}
-        """
-
-        try:
-            messages = [{"role": "user", "content": prompt}]
-            response = await self.ai_client.generate_response(messages, max_tokens=500)
-
-            # Парсим ответ и генерируем псевдо-эмбеддинг
-            # В реальной реализации нужно использовать专门的 embeddings API
-            return self._generate_simple_embedding(text)
-
-        except Exception as e:
-            self.logger.error(f"Error getting embedding: {e}")
-            return self._generate_simple_embedding(text)
-
-    def _generate_simple_embedding(self, text: str) -> List[float]:
-        """Упрощенная генерация эмбеддинга (заглушка)"""
-        # В реальной реализации нужно подключить embeddings API DeepSeek
-        import hashlib
-        import struct
-
-        # Генерируем детерминированный "эмбеддинг" на основе хеша текста
-        hash_obj = hashlib.md5(text.encode())
-        hash_bytes = hash_obj.digest()
-
-        # Создаем вектор из 384 элементов (как в популярных моделях)
-        embedding = []
-        for i in range(384):
-            # Используем разные части хеша для заполнения вектора
-            byte_idx = i % len(hash_bytes)
-            value = (hash_bytes[byte_idx] / 255.0) * 2 - 1  # Нормализуем к [-1, 1]
-            embedding.append(round(value, 6))
-
-        return embedding
 
     def _parse_llm_response(self, response: str) -> Dict[str, Any]:
         """Парсинг JSON ответа от LLM"""
