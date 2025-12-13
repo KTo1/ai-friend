@@ -124,7 +124,6 @@ FRIEND_PROMPT = """
 
 """
 
-
 class FriendBot:
     def __init__(self):
         self.application = None

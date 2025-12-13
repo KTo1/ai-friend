@@ -414,7 +414,6 @@ class DeepSeekAdvancedLoadTester:
                     self.results.ai_errors += 1
                     if random.random() < 0.05:
                         print(f"🤖 AI Error for user {user_id}: {str(ai_error)[:50]}")
-                    response = "Привет! Как дела?"
 
                 # 9. Записываем использование
                 self.services['limit'].record_message_usage(
