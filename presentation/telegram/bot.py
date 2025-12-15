@@ -439,19 +439,27 @@ class FriendBot:
             user.id, user.username, user.first_name, user.last_name
         )
 
-        # Приветственное сообщение
-        welcome_msg = (
-            '👋 *Добро пожаловать!*\n\n'
-            'Выбери персонажа для общения из списка. Каждый из них имеет свою уникальную личность и стиль общения.\n\n'
-            'После выбора персонажа просто напиши мне сообщение, и мы начнем общаться!'
-        )
+        characters = self.character_repo.get_all_characters(active_only=True)
+        if len(characters) == 1:
+            success, message = self.manage_character_uc.set_user_character(user.id, characters[0].id)
 
-        success = await self._safe_reply(update, welcome_msg)
-        if not success:
-            self.logger.error(f"Failed to send start message to user {user.id}")
+            success = await self._safe_reply(update, response)
+            if not success:
+                self.logger.error(f"Failed to send start message to user {user.id}")
+        else:
+            # Приветственное сообщение
+            welcome_msg = (
+                '👋 *Добро пожаловать!*\n\n'
+                'Выбери персонажа для общения из списка. Каждый из них имеет свою уникальную личность и стиль общения.\n\n'
+                'После выбора персонажа просто напиши мне сообщение, и мы начнем общаться!'
+            )
 
-         # Показываем карусель персонажей при старте
-        await self.show_character_carousel(update)
+            success = await self._safe_reply(update, welcome_msg)
+            if not success:
+                self.logger.error(f"Failed to send start message to user {user.id}")
+
+             # Показываем карусель персонажей при старте
+            await self.show_character_carousel(update)
 
     async def reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
