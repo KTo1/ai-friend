@@ -29,15 +29,12 @@ class RAGMemory:
     embedding: Optional[List[float]] = None
     created_at: datetime = None
     updated_at: datetime = None
-    metadata: Dict[str, Any] = None
 
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = datetime.utcnow()
         if self.updated_at is None:
             self.updated_at = datetime.utcnow()
-        if self.metadata is None:
-            self.metadata = {}
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -50,7 +47,6 @@ class RAGMemory:
             'embedding': self.embedding,
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat(),
-            'metadata': self.metadata
         }
 
     @classmethod
@@ -64,6 +60,5 @@ class RAGMemory:
             importance_score=data['importance_score'],
             embedding=data.get('embedding'),
             created_at=datetime.fromisoformat(data['created_at']),
-            updated_at=datetime.fromisoformat(data['updated_at']),
-            metadata=data.get('metadata', {})
+            updated_at=datetime.fromisoformat(data['updated_at'])
         )

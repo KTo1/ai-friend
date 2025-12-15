@@ -1,6 +1,7 @@
 import os
 import asyncio
 import aiohttp
+from sentence_transformers import SentenceTransformer
 from typing import List, Dict
 from domain.interfaces.ai_client import AIClientInterface
 from infrastructure.monitoring.metrics import metrics_collector
@@ -23,6 +24,11 @@ class DeepSeekClient(BaseAIClient, AIClientInterface):
         self.connect_timeout = 10.0  # секунд
         self.read_timeout = 30.0  # секунд
         self.total_timeout = 60.0  # секунд
+
+        # Для эмбеддингов через Hugging Face
+        self.embedding_tokenizer = None
+        self.embedding_model = None
+        self._embedding_lock = asyncio.Lock()
 
         if not self.api_key:
             self.logger.warning("DEEPSEEK_API_KEY not set - DeepSeek client will not work")
@@ -124,12 +130,49 @@ class DeepSeekClient(BaseAIClient, AIClientInterface):
             )
             raise
 
+    async def get_embedding(self, text: str) -> List[float]:
+        """Получение эмбеддингов через SentenceTransformer (локально)"""
+        async with self._embedding_lock:
+            if self.embedding_model is None:
+                # model_name = 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
+                model_name = 'cointegrated/rubert-tiny2'
+                self.logger.info(f'Loading embedding model: {model_name}')
+                # Загружаем модель в отдельном потоке, чтобы не блокировать event loop
+                loop = asyncio.get_event_loop()
+                self.embedding_model = await loop.run_in_executor(None, SentenceTransformer,model_name)
+
+        # Кодируем текст в отдельном потоке
+        loop = asyncio.get_event_loop()
+        embedding = await loop.run_in_executor(
+            None,
+            lambda: self.embedding_model.encode(
+                text,
+                convert_to_numpy=True,
+                normalize_embeddings=True,
+                show_progress_bar=False
+            )
+        )
+
+        return embedding.tolist()
+
     async def close(self):
         """Закрыть HTTP сессию"""
         async with self._session_lock:
             if self._session and not self._session.closed:
                 await self._session.close()
                 self._session = None
+
+    async def _generate_fallback_embedding(self, text: str) -> List[float]:
+        import hashlib
+        import struct
+        hash_obj = hashlib.md5(text.encode())
+        hash_bytes = hash_obj.digest()
+        embedding = []
+        for i in range(384):
+            byte_idx = i % len(hash_bytes)
+            value = hash_bytes[byte_idx] / 255.0 * 2 - 1
+            embedding.append(round(value, 6))
+        return embedding
 
     def _prepare_messages(self, messages: List[Dict]) -> List[Dict]:
         """Подготовка сообщений для DeepSeek API"""

@@ -295,7 +295,7 @@ if __name__ == "__main__":
 
     # 1. Полная версия (все файлы)
     print("Создание полной версии...")
-    get_project_structure(".", "project_structure_full.txt")
+    get_project_structure(".", "project_structure_full.txt",   exclude_dirs=['.git', '__pycache__', '.vscode', '.idea', 'venv', 'env', 'node_modules', '.github', 'logs', '.pytest_cache'])
 
     # 2. Только определенные папки
     print("\nСоздание версии с фильтром папок...")

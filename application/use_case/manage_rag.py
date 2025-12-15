@@ -108,10 +108,6 @@ class ManageRAGUseCase:
 
             if not is_bot_related:
                 filtered_memories.append(memory)
-            else:
-                memory.metadata['filtered'] = True
-                memory.metadata['filter_reason'] = 'bot_related'
-                self.logger.debug(f"Filtered bot-related memory: {memory.content}")
 
         return filtered_memories
 
@@ -151,7 +147,7 @@ class ManageRAGUseCase:
 
             # Ищем похожие воспоминания
             similar_memories = self.rag_repo.search_similar_memories(
-                user_id, query_embedding, limit=limit
+                user_id, query_embedding, limit=limit, similarity_threshold=0.3
             )
 
             # Если не нашли похожих, берем самые важные
@@ -185,11 +181,6 @@ class ManageRAGUseCase:
     def get_user_memories(self, user_id: int, limit: int = 20) -> List[RAGMemory]:
         """Получить все воспоминания пользователя"""
         return self.rag_repo.get_user_memories(user_id, limit=limit)
-
-    @trace_span("usecase.delete_memory", attributes={"component": "application"})
-    def delete_memory(self, memory_id: int) -> bool:
-        """Удалить воспоминание"""
-        return self.rag_repo.delete_memory(memory_id)
 
     @trace_span("usecase.clear_user_memories", attributes={"component": "application"})
     def clear_user_memories(self, user_id: int) -> bool:

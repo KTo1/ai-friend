@@ -10,6 +10,10 @@ class AIClientInterface(ABC):
         """Сгенерировать ответ (асинхронно)"""
         pass
 
+    @abstractmethod
+    async def get_embedding(self, text: str) -> List[float]:
+        pass
+
     async def close(self):
         """Закрыть ресурсы (асинхронно)"""
         pass
