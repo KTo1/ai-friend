@@ -17,13 +17,14 @@ class UserRepository:
         """Сохранить пользователя"""
         self.db.execute_query('''
             INSERT INTO users 
-            (user_id, username, first_name, last_name, is_admin, is_blocked, 
+            (user_id, username, first_name, last_name, current_character_id, is_admin, is_blocked, 
              blocked_reason, blocked_at, blocked_by, last_seen)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (user_id) DO UPDATE SET
                 username = EXCLUDED.username,
                 first_name = EXCLUDED.first_name,
                 last_name = EXCLUDED.last_name,
+                current_character_id = EXCLUDED.current_character_id, 
                 is_admin = EXCLUDED.is_admin,
                 is_blocked = EXCLUDED.is_blocked,
                 blocked_reason = EXCLUDED.blocked_reason,
@@ -35,6 +36,7 @@ class UserRepository:
             user.username,
             user.first_name,
             user.last_name,
+            user.current_character_id,
             user.is_admin,
             user.is_blocked,
             user.blocked_reason,
@@ -46,7 +48,7 @@ class UserRepository:
     def get_user(self, user_id: int) -> Optional[User]:
         """Получить пользователя по ID"""
         result = self.db.fetch_one(
-            '''SELECT user_id, username, first_name, last_name, is_admin, 
+            '''SELECT user_id, username, first_name, last_name, current_character_id, is_admin, 
                       is_blocked, blocked_reason, blocked_at, blocked_by, 
                       created_at, last_seen 
                FROM users WHERE user_id = %s''',
@@ -59,6 +61,7 @@ class UserRepository:
                 username=result['username'],
                 first_name=result['first_name'],
                 last_name=result['last_name'],
+                current_character_id=result['current_character_id'],
                 is_admin=bool(result['is_admin']),
                 is_blocked=bool(result['is_blocked']),
                 blocked_reason=result['blocked_reason'],
@@ -72,7 +75,7 @@ class UserRepository:
     def get_all_users(self) -> List[User]:
         """Получить всех пользователей"""
         results = self.db.fetch_all(
-            '''SELECT user_id, username, first_name, last_name, is_admin,
+            '''SELECT user_id, username, first_name, last_name, current_character_id, is_admin,
                       is_blocked, blocked_reason, blocked_at, blocked_by,
                       created_at, last_seen 
                FROM users ORDER BY created_at DESC'''
@@ -85,6 +88,7 @@ class UserRepository:
                 username=result['username'],
                 first_name=result['first_name'],
                 last_name=result['last_name'],
+                current_character_id=result['current_character_id'],
                 is_admin=bool(result['is_admin']),
                 is_blocked=bool(result['is_blocked']),
                 blocked_reason=result['blocked_reason'],

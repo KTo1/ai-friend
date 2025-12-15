@@ -12,7 +12,7 @@ class RAGRepository:
         self.db = database
         self.logger = StructuredLogger('rag_repository')
 
-    def save_memory(self, memory: RAGMemory) -> int:
+    def save_memory(self, memory: RAGMemory, character_id: int) -> int:
         try:
             # Конвертируем embedding в строку для PostgreSQL vector типа
             embedding_str = None
@@ -21,12 +21,13 @@ class RAGRepository:
 
             query = '''
                     INSERT INTO user_rag_memories
-                    (user_id, memory_type, content, source_message, importance_score,
+                    (user_id, character_id, memory_type, content, source_message, importance_score,
                      embedding, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id \
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id \
                     '''
             params = (
                 memory.user_id,
+                character_id,
                 memory.memory_type.value,
                 memory.content,
                 memory.source_message,
@@ -43,16 +44,16 @@ class RAGRepository:
             self.logger.error(f'Error saving memory: {e}')
             return 0
 
-    def get_user_memories(self, user_id: int, limit: int=50, min_importance: float=0.7) -> List[RAGMemory]:
+    def get_user_memories(self, user_id: int, character_id: int, limit: int=50, min_importance: float=0.7) -> List[RAGMemory]:
         try:
             results = self.db.fetch_all("""
                 SELECT id, user_id, memory_type, content, source_message, 
                        importance_score, embedding, created_at, updated_at
                 FROM user_rag_memories 
-                WHERE user_id = %s AND importance_score >= %s
+                WHERE user_id = %s AND character_id = %s AND importance_score >= %s
                 ORDER BY importance_score DESC, updated_at DESC
                 LIMIT %s
-            """, (user_id, min_importance, limit))
+            """, (user_id, character_id, min_importance, limit))
             memories = []
             for result in results:
                 memory = RAGMemory(
@@ -72,7 +73,7 @@ class RAGRepository:
             self.logger.error(f'Error getting user memories: {e}')
             return []
 
-    def search_similar_memories(self, user_id: int, query_embedding: List[float],
+    def search_similar_memories(self, user_id: int, character_id: int, query_embedding: List[float],
                                 limit: int = 5, similarity_threshold: float = 0.6) -> List[RAGMemory]:
         try:
             # Конвертируем embedding в строку для PostgreSQL
@@ -81,22 +82,14 @@ class RAGRepository:
             # ВАЖНО: pgvector оператор <=> возвращает косинусное расстояние (1 - cosine similarity)
             # Поэтому: similarity = 1 - distance = cosine similarity
             results = self.db.fetch_all('''
-                                        SELECT id,
-                                               user_id,
-                                               memory_type,
-                                               content,
-                                               source_message,
-                                               importance_score,
-                                               embedding,
-                                               created_at,
-                                               updated_at,
+                                        SELECT id, user_id, memory_type, content, source_message, importance_score, embedding, created_at, updated_at,
                                                1 - (embedding <=> %s::vector) as similarity
                                         FROM user_rag_memories
-                                        WHERE user_id = %s
+                                        WHERE user_id = %s AND character_id = %s
                                           AND embedding IS NOT NULL
                                         ORDER BY similarity DESC -- ⚠️ ИЗМЕНЕНО: сортируем по similarity, а не distance
                                             LIMIT %s
-                                        ''', (embedding_str, user_id, limit))
+                                        ''', (embedding_str, user_id, character_id, limit))
 
             self.logger.debug(f'Found {len(results)} memories before filtering')
 
@@ -147,9 +140,9 @@ class RAGRepository:
             self.logger.error(f'Error searching similar memories: {e}', exc_info=True)
             return []
 
-    def delete_user_memories(self, user_id: int) -> bool:
+    def delete_user_memories(self, user_id: int, character_id: int) -> bool:
         try:
-            self.db.execute_query("DELETE FROM user_rag_memories WHERE user_id = %s", (user_id,))
+            self.db.execute_query("DELETE FROM user_rag_memories WHERE user_id = %s AND character_id = %s", (user_id, character_id))
             return True
         except Exception as e:
             self.logger.error(f'Error deleting user memories: {e}')

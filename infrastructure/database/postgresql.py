@@ -50,7 +50,23 @@ class PostgreSQLDatabase:
         """Инициализация базы данных и создание таблиц"""
         try:
             with self.get_cursor() as cursor:
-                # Включение расширения vector для векторных операций
+
+                cursor.execute('''
+                               CREATE TABLE IF NOT EXISTS characters
+                                      (id SERIAL PRIMARY KEY,
+                                          name VARCHAR(100) NOT NULL UNIQUE,
+                                          description TEXT NOT NULL,
+                                          system_prompt TEXT NOT NULL,
+                                          avatar BYTEA NOT NULL,
+                                          avatar_mime_type VARCHAR(50) DEFAULT 'image/jpeg',
+                                          is_active BOOLEAN DEFAULT TRUE,
+                                          display_order INTEGER DEFAULT 0,
+                                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                          )
+                              ''')
+
+                                   # Включение расширения vector для векторных операций
                 cursor.execute(''' CREATE EXTENSION IF NOT EXISTS vector; ''')
 
                 # Таблица для RAG памяти (уже создается в коде, но можно добавить и здесь)
@@ -58,6 +74,7 @@ class PostgreSQLDatabase:
                     CREATE TABLE IF NOT EXISTS user_rag_memories (
                     id SERIAL PRIMARY KEY,
                     user_id BIGINT NOT NULL,
+                    character_id INTEGER NOT NULL,
                     memory_type VARCHAR(40) NOT NULL,
                     content TEXT NOT NULL,
                     source_message TEXT,
@@ -66,7 +83,8 @@ class PostgreSQLDatabase:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     
-                    CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+                    CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+                    CONSTRAINT fk_character FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
                     );
                 ''')
 
@@ -90,6 +108,7 @@ class PostgreSQLDatabase:
                         last_name TEXT,
                         is_admin BOOLEAN DEFAULT FALSE,
                         is_blocked BOOLEAN DEFAULT FALSE,
+                        current_character_id INTEGER REFERENCES characters(id) ON DELETE SET NULL,
                         blocked_reason TEXT,
                         blocked_at TIMESTAMP,
                         blocked_by BIGINT,
@@ -115,6 +134,7 @@ class PostgreSQLDatabase:
                     CREATE TABLE IF NOT EXISTS conversation_context (
                         id SERIAL PRIMARY KEY,
                         user_id BIGINT REFERENCES users(user_id),
+                        character_id INTEGER REFERENCES characters(id), 
                         role TEXT NOT NULL,
                         content TEXT NOT NULL,
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP

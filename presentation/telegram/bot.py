@@ -1,10 +1,13 @@
 import os
 import asyncio
 
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import tempfile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
 from presentation.telegram.middleware import TelegramMiddleware
+
+from domain.entity.character import Character
 
 from infrastructure.database.database import Database
 from infrastructure.database.repositories.user_repository import UserRepository
@@ -14,6 +17,7 @@ from infrastructure.database.repositories.tariff_repository import TariffReposit
 from infrastructure.database.repositories.rag_repository import RAGRepository
 from infrastructure.database.repositories.user_stats_repository import UserStatsRepository
 from infrastructure.database.repositories.rate_limit_tracking_repository import RateLimitTrackingRepository
+from infrastructure.database.repositories.character_repository import CharacterRepository
 
 from infrastructure.ai.ai_factory import AIFactory
 from infrastructure.monitoring.logging import setup_logging, StructuredLogger
@@ -37,6 +41,7 @@ from application.use_case.manage_user_limits import ManageUserLimitsUseCase
 from application.use_case.manage_tariff import ManageTariffUseCase
 from application.use_case.manage_rag import ManageRAGUseCase
 from application.use_case.check_limits import CheckLimitsUseCase
+from application.use_case.manage_character import ManageCharacterUseCase
 
 # Импорты для Telegram rate limiting
 from presentation.telegram.message_sender import get_telegram_sender, get_telegram_rate_limiter
@@ -141,6 +146,7 @@ class FriendBot:
         self.rag_repo = RAGRepository(self.database)
         self.user_stats_repo = UserStatsRepository(self.database)
         self.rate_limit_tracking_repo = RateLimitTrackingRepository(self.database)
+        self.character_repo = CharacterRepository(self.database)
 
         # Используем фабрику для создания AI клиента!
         self.ai_client = AIFactory.create_client()
@@ -162,22 +168,200 @@ class FriendBot:
         self.rate_limiter = get_telegram_rate_limiter()
 
         # Инициализация use cases с правильными зависимостями
-        self.start_conversation_uc = StartConversationUseCase(self.user_repo, self.profile_repo)
+        self.start_conversation_uc = StartConversationUseCase(self.user_repo, self.profile_repo, self.tariff_service)
         self.manage_profile_uc = ManageProfileUseCase(self.profile_repo, self.ai_client)
-        self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.ai_client)
+        self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.character_repo, self.ai_client)
         self.manage_admin_uc = ManageAdminUseCase(self.admin_service)
         self.manage_block_uc = ManageBlockUseCase(self.block_service)
-
-        # Единый use case для управления лимитами
         self.manage_user_limits_uc = ManageUserLimitsUseCase(self.user_stats_repo)
-
         self.manage_tariff_uc = ManageTariffUseCase(self.tariff_service)
         self.manage_rag_uc = ManageRAGUseCase(self.rag_repo, self.rag_service)
         self.check_limits_uc = CheckLimitsUseCase(self.limit_service)
+        self.manage_character_uc = ManageCharacterUseCase(self.character_repo, self.user_repo)
 
         self.middleware = TelegramMiddleware()
 
+        self.user_character_selections = {}  # {user_id: {'page': 0, 'characters': []}}
+
         self.logger.info("FriendBot initialized successfully")
+
+    async def show_character_carousel(self, update: Update, page: int = 0):
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+
+        characters = self.manage_character_uc.get_all_characters()
+        if not characters:
+            await self._safe_reply(update, '❌ Нет доступных персонажей')
+            return
+
+        # Один персонаж на страницу
+        total_pages = len(characters)
+        page = max(0, min(page, total_pages - 1))
+
+        # Получаем текущего персонажа для страницы
+        character = characters[page]
+
+        # Сохраняем состояние для пользователя
+        self.user_character_selections[user_id] = {
+            'page': page,
+            'characters': characters
+        }
+
+        # Создаем инлайн-клавиатуру
+        keyboard = []
+
+        # Кнопка выбора текущего персонажа
+        keyboard.append([
+            InlineKeyboardButton(
+                f"✅ Выбрать {character.name}",
+                callback_data=f"select_char_{character.id}"
+            )
+        ])
+
+        # Кнопки навигации
+        nav_buttons = []
+        if page > 0:
+            nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"char_page_{page - 1}"))
+
+        nav_buttons.append(InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="char_page_info"))
+
+        if page < total_pages - 1:
+            nav_buttons.append(InlineKeyboardButton("Вперед ➡️", callback_data=f"char_page_{page + 1}"))
+
+        if nav_buttons:
+            keyboard.append(nav_buttons)
+
+        # Дополнительная навигация: кнопка для перехода к первому/последнему
+        if total_pages > 1:
+            quick_nav = []
+            if page > 0:
+                quick_nav.append(InlineKeyboardButton("⏮️ Первый", callback_data="char_page_0"))
+            if page < total_pages - 1:
+                quick_nav.append(InlineKeyboardButton("⏭️ Последний", callback_data=f"char_page_{total_pages - 1}"))
+            if quick_nav:
+                keyboard.append(quick_nav)
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # Отправляем фото с описанием
+        try:
+            success = await self._send_photo_with_bytes(
+                chat_id=chat_id,
+                photo_bytes=character.avatar,
+                caption=f"*{character.name}*\n\n{character.description}\n\nИспользуйте кнопки навигации для просмотра других персонажей.",
+                parse_mode='Markdown',
+                reply_markup=reply_markup
+            )
+
+            if not success:
+                raise Exception("Failed to send photo")
+
+        except Exception as e:
+            self.logger.error(f'Error sending character photo: {e}')
+            # Если не удалось отправить фото, отправляем только текст
+            await self._safe_send_message(
+                chat_id,
+                f"*{character.name}*\n\n{character.description}\n\nИспользуйте кнопки навигации для просмотра других персонажей.",
+                parse_mode='Markdown',
+                reply_markup=reply_markup
+            )
+
+    async def handle_character_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+
+        user_id = query.from_user.id
+        data = query.data
+        chat_id = query.message.chat_id if query.message else None
+
+        if data.startswith('char_page_'):
+            try:
+                page = int(data.split('_')[2])
+                await self.show_character_carousel(update, page)
+                # Удаляем предыдущее сообщение с каруселью
+                try:
+                    await query.delete_message()
+                except:
+                    pass
+            except (ValueError, IndexError):
+                await query.answer('❌ Ошибка навигации', show_alert=True)
+
+        elif data.startswith('select_char_'):
+            try:
+                character_id = int(data.split('_')[2])
+                success, message = self.manage_character_uc.set_user_character(user_id, character_id)
+
+                if success:
+                    character = self.character_repo.get_character(character_id)
+
+                    # Проверяем, есть ли у сообщения фото (тогда у него caption, а не text)
+                    if query.message.photo:
+                        # Редактируем caption сообщения с фото
+                        try:
+                            await query.edit_message_caption(
+                                caption=f"✅ *Вы выбрали: {character.name}*\n\n{character.description}\n\nТеперь вы можете общаться! Напишите что-нибудь.",
+                                parse_mode='Markdown'
+                            )
+                        except Exception as e:
+                            self.logger.warning(f'Could not edit caption, sending new message: {e}')
+                            # Если не удалось отредактировать caption, отправляем новое сообщение
+                            await self._safe_send_message(
+                                chat_id,
+                                f"✅ *Вы выбрали: {character.name}*\n\n{character.description}\n\nТеперь вы можете общаться! Напишите что-нибудь.",
+                                parse_mode='Markdown'
+                            )
+                    else:
+                        # У сообщения только текст, редактируем его
+                        await query.edit_message_text(
+                            f"✅ *Вы выбрали: {character.name}*\n\n{character.description}\n\nТеперь вы можете общаться! Напишите что-нибудь.",
+                            parse_mode='Markdown'
+                        )
+                else:
+                    await query.answer(message, show_alert=True)
+
+            except Exception as e:
+                self.logger.error(f'Error selecting character: {e}')
+                await query.answer('❌ Ошибка при выборе персонажа', show_alert=True)
+
+        elif data == 'char_page_info':
+            await query.answer('Используйте кнопки для навигации')
+
+    async def _send_photo_with_bytes(self, chat_id: int, photo_bytes: bytes, caption: str = None,
+                                     reply_markup=None, parse_mode: str = None) -> bool:
+        """
+        Отправляет фото из bytes с использованием временного файла
+        """
+        if not hasattr(self, 'application') or not self.application:
+            self.logger.error('Bot application not available')
+            return False
+
+        try:
+            # Создаем временный файл для хранения изображения
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
+                temp_file.write(photo_bytes)
+                temp_file_path = temp_file.name
+
+            try:
+                # Открываем файл и отправляем
+                with open(temp_file_path, 'rb') as photo_file:
+                    await self.application.bot.send_photo(
+                        chat_id=chat_id,
+                        photo=InputFile(photo_file),
+                        caption=caption,
+                        parse_mode=parse_mode,
+                        reply_markup=reply_markup
+                    )
+                return True
+            finally:
+                # Удаляем временный файл
+                try:
+                    os.unlink(temp_file_path)
+                except Exception as e:
+                    self.logger.warning(f'Could not delete temp file {temp_file_path}: {e}')
+
+        except Exception as e:
+            self.logger.error(f'Error sending photo: {e}')
+            return False
 
     async def _send_typing_status(self, chat_id: int) -> bool:
         """Безопасный ответ на сообщение с учетом лимитов Telegram"""
@@ -251,36 +435,38 @@ class FriendBot:
             extra={'user_id': user.id, 'username': user.username}
         )
 
-        # НАЗНАЧЕНИЕ ТАРИФА ПО УМОЛЧАНИЮ ПРИ ПЕРВОМ СТАРТЕ
-        try:
-            user_tariff = self.tariff_service.get_user_tariff(user.id)
-            if not user_tariff:
-                default_tariff = self.tariff_service.get_default_tariff()
-                if default_tariff:
-                    success, message = self.tariff_service.assign_tariff_to_user(user.id, default_tariff.id)
-                    if success:
-                        self.logger.info(f"Assigned default tariff '{default_tariff.name}' to new user {user.id}")
-
-        except Exception as e:
-            self.logger.error(f"Error assigning tariff to new user {user.id}: {e}")
-
         response = self.start_conversation_uc.execute(
             user.id, user.username, user.first_name, user.last_name
         )
-        success = await self._safe_reply(update, response)
+
+        # Приветственное сообщение
+        welcome_msg = (
+            '👋 *Добро пожаловать!*\n\n'
+            'Выбери персонажа для общения из списка. Каждый из них имеет свою уникальную личность и стиль общения.\n\n'
+            'После выбора персонажа просто напиши мне сообщение, и мы начнем общаться!'
+        )
+
+        success = await self._safe_reply(update, welcome_msg)
         if not success:
             self.logger.error(f"Failed to send start message to user {user.id}")
+
+         # Показываем карусель персонажей при старте
+        await self.show_character_carousel(update)
 
     async def reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
 
         self.logger.info("Reset command received", extra={'user_id': user_id})
 
-        self.conversation_repo.clear_conversation(user_id)
-        self.rag_repo.delete_user_memories(user_id)
-        success = await self._safe_reply(update, "🧹 Давай начнем наш разговор заново! Как твои дела?")
-        if not success:
-            self.logger.error(f"Failed to send reset message to user {user_id}")
+        # Получаем текущего персонажа пользователя
+        character = self.manage_character_uc.get_user_character(user_id)
+        if character:
+            # Очищаем контекст и памяти для текущего персонажа
+            self.conversation_repo.clear_conversation(user_id, character.id)
+            self.rag_repo.delete_user_memories(user_id, character.id)
+            success = await self._safe_reply(update, f'🧹 Разговор с {character.name} сброшен! Давай начнем заново! Как твои дела?')
+        else:
+            success = await self._safe_reply(update, '🧹 Давай начнем наш разговор заново! Сначала выбери персонажа с помощью /choose_character')
 
     async def limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать текущие лимиты пользователя"""
@@ -788,6 +974,16 @@ class FriendBot:
 
         self.user_repo.update_last_seen(user_id)
 
+        # Получаем текущего персонажа пользователя
+        character = self.manage_character_uc.get_user_character(user_id)
+
+        # Если персонаж не выбран, показываем карусель
+        if not character:
+            await self.show_character_carousel(update)
+            await self._safe_reply(update,
+                                   '👋 Привет! Сначала выберите персонажа для общения из списка выше.')
+            return
+
         user_tariff = self.tariff_service.get_user_tariff(user_id)
         if not user_tariff or not user_tariff.tariff_plan:
             default_tariff = self.tariff_service.get_default_tariff()
@@ -831,12 +1027,12 @@ class FriendBot:
             if rag_enabled:
                 # Извлекаем и сохраняем воспоминания (асинхронно)
                 asyncio.create_task(
-                    self.manage_rag_uc.extract_and_save_memories(user.id, user_message)
+                    self.manage_rag_uc.extract_and_save_memories(user.id, character.id, user_message)
                 )
 
                 # Получаем релевантные воспоминания для текущего сообщения
                 rag_context = await self.manage_rag_uc.prepare_rag_context(
-                    user.id, user_message
+                    user.id, character.id, user_message
                 )
 
                 self.logger.debug(
@@ -848,19 +1044,15 @@ class FriendBot:
                     }
                 )
 
-            # Обновляем системный промпт с RAG контекстом
-            enhanced_system_prompt = FRIEND_PROMPT
-            if rag_context:
-                enhanced_system_prompt = f"{FRIEND_PROMPT}\n\n{rag_context}"
-
             # Извлекаем и обновляем профиль
             profile_data = await self.manage_profile_uc.extract_and_update_profile(user_id, user_message)
 
             # Обрабатываем сообщение с передачей лимита контекста из тарифа
             response = await self.handle_message_uc.execute(
                 user_id,
+                character.id,
                 user_message,
-                enhanced_system_prompt,
+                rag_context,
                 max_context_messages=tariff.message_limits.max_context_messages  # ← лимит из тарифа!
             )
 
@@ -910,6 +1102,11 @@ class FriendBot:
         if not success:
             self.logger.error(f"Failed to send help to user {update.effective_user.id}")
 
+    async def choose_character(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        self.logger.info('Character selection requested', extra={'user_id': user_id})
+        await self.show_character_carousel(update)
+
     def setup_handlers(self):
         self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(CommandHandler("help", self.help_command))
@@ -917,6 +1114,7 @@ class FriendBot:
         self.application.add_handler(CommandHandler("limits", self.limits))
         self.application.add_handler(CommandHandler("tariff", self.tariff))
         self.application.add_handler(CommandHandler("all_tariffs", self.all_tariffs))
+        self.application.add_handler(CommandHandler('choose_character', self.choose_character))
 
         # Административные команды
         self.application.add_handler(CommandHandler("admin_users", self.admin_users))
@@ -938,6 +1136,12 @@ class FriendBot:
         # Команды управления тарифами
         self.application.add_handler(CommandHandler("admin_assign_tariff", self.admin_assign_tariff))
         self.application.add_handler(CommandHandler("admin_user_tariff", self.admin_user_tariff))
+
+        # Обработчик карусели персонажей
+        self.application.add_handler(CallbackQueryHandler(
+            self.handle_character_callback,
+            pattern=r'^(char_page_|select_char_|char_page_info)'
+        ))
 
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 

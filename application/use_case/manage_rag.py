@@ -19,7 +19,7 @@ class ManageRAGUseCase:
         ]
 
     @trace_span("usecase.extract_memories", attributes={"component": "application"})
-    async def extract_and_save_memories(self, user_id: int, message: str) -> List[RAGMemory]:
+    async def extract_and_save_memories(self, user_id: int, character_id: int, message: str) -> List[RAGMemory]:
         """Извлечь и сохранить воспоминания ТОЛЬКО из текущего сообщения"""
         try:
             # Извлекаем воспоминания только из текущего сообщения
@@ -35,7 +35,7 @@ class ManageRAGUseCase:
                 return []
 
             # Проверяем на дубликаты перед сохранением
-            unique_memories = await self._filter_duplicate_memories(user_id, filtered_memories)
+            unique_memories = await self._filter_duplicate_memories(user_id, character_id, filtered_memories)
 
             if not unique_memories:
                 return []
@@ -46,7 +46,7 @@ class ManageRAGUseCase:
             # Сохраняем в базу
             saved_memories = []
             for memory in memories_with_embeddings:
-                memory_id = self.rag_repo.save_memory(memory)
+                memory_id = self.rag_repo.save_memory(memory, character_id)
                 if memory_id:
                     memory.id = memory_id
                     saved_memories.append(memory)
@@ -55,6 +55,7 @@ class ManageRAGUseCase:
                 f"RAG: Saved {len(saved_memories)} new memories from current message",
                 extra={
                     'user_id': user_id,
+                    'character_id': character_id,
                     'original_count': len(memories),
                     'unique_count': len(saved_memories)
                 }
@@ -66,13 +67,13 @@ class ManageRAGUseCase:
             self.logger.error(f"Error extracting memories for user {user_id}: {e}")
             return []
 
-    async def _filter_duplicate_memories(self, user_id: int, new_memories: List[RAGMemory]) -> List[RAGMemory]:
+    async def _filter_duplicate_memories(self, user_id: int,  character_id: int, new_memories: List[RAGMemory]) -> List[RAGMemory]:
         """Фильтрация дубликатов на основе семантической схожести"""
         if not new_memories:
             return []
 
         # Получаем существующие воспоминания пользователя
-        existing_memories = self.rag_repo.get_user_memories(user_id, limit=50)
+        existing_memories = self.rag_repo.get_user_memories(user_id, character_id, limit=50)
 
         if not existing_memories:
             return new_memories
@@ -131,7 +132,7 @@ class ManageRAGUseCase:
             return 0.0
 
     @trace_span("usecase.get_relevant_memories", attributes={"component": "application"})
-    async def get_relevant_memories(self, user_id: int, user_message: str,
+    async def get_relevant_memories(self, user_id: int, character_id: int, user_message: str,
                                     limit: int = 5) -> List[RAGMemory]:
         """Получить релевантные воспоминания для текущего сообщения"""
         try:
@@ -141,18 +142,18 @@ class ManageRAGUseCase:
 
             if not memories_with_embeddings or not memories_with_embeddings[0].embedding:
                 # Если не удалось сгенерировать эмбеддинг, возвращаем самые важные воспоминания
-                return self.rag_repo.get_user_memories(user_id, limit=limit)
+                return self.rag_repo.get_user_memories(user_id, character_id, limit=limit)
 
             query_embedding = memories_with_embeddings[0].embedding
 
             # Ищем похожие воспоминания
             similar_memories = self.rag_repo.search_similar_memories(
-                user_id, query_embedding, limit=limit, similarity_threshold=0.3
+                user_id, character_id, query_embedding, limit=limit, similarity_threshold=0.3
             )
 
             # Если не нашли похожих, берем самые важные
             if not similar_memories:
-                similar_memories = self.rag_repo.get_user_memories(user_id, limit=limit)
+                similar_memories = self.rag_repo.get_user_memories(user_id, character_id, limit=limit)
 
             return similar_memories
 
@@ -161,12 +162,12 @@ class ManageRAGUseCase:
             return []
 
     @trace_span("usecase.prepare_rag_context", attributes={"component": "application"})
-    async def prepare_rag_context(self, user_id: int, user_message: str,
+    async def prepare_rag_context(self, user_id: int, character_id: int, user_message: str,
                                   conversation_context: List[Dict] = None) -> str:
         """Подготовить RAG контекст для диалога"""
         try:
             # Получаем релевантные воспоминания
-            relevant_memories = await self.get_relevant_memories(user_id, user_message)
+            relevant_memories = await self.get_relevant_memories(user_id, character_id, user_message)
 
             # Подготавливаем текст для контекста
             rag_context = self.rag_service.prepare_memories_for_context(relevant_memories)
