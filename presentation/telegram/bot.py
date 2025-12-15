@@ -1055,6 +1055,8 @@ class FriendBot:
             # Извлекаем и обновляем профиль
             profile_data = await self.manage_profile_uc.extract_and_update_profile(user_id, user_message)
 
+            await self._send_typing_status(user_id)
+
             # Обрабатываем сообщение с передачей лимита контекста из тарифа
             response = await self.handle_message_uc.execute(
                 user_id,
