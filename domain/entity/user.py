@@ -9,6 +9,7 @@ class User:
     username: Optional[str]
     first_name: Optional[str]
     last_name: Optional[str]
+    current_character_id: Optional[int] = None
     is_admin: bool = False
     is_blocked: bool = False
     blocked_reason: Optional[str] = None
@@ -40,3 +41,6 @@ class User:
         self.blocked_reason = None
         self.blocked_at = None
         self.blocked_by = None
+
+    def set_character(self, character_id: int):  
+        self.current_character_id = character_id
