@@ -21,7 +21,7 @@ class DeepSeekClient(BaseAIClient, AIClientInterface):
         self._session_lock = asyncio.Lock()
 
         # Таймауты для запросов
-        self.connect_timeout = 10.0  # секунд
+        self.connect_timeout = 15.0  # секунд
         self.read_timeout = 30.0  # секунд
         self.total_timeout = 60.0  # секунд
 

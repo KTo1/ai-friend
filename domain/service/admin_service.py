@@ -29,14 +29,16 @@ class AdminService:
                 self.logger.error(f"Error parsing DEFAULT_ADMIN_IDS: {e}")
 
     def is_admin(self, user_id: int) -> bool:
+        # Проверяем администраторов по умолчанию
+        if user_id in self.default_admin_ids:
+            return True
+
         """Проверить, является ли пользователь администратором"""
         user = self.user_repo.get_user(user_id)
-
         if user:
             return user.is_admin
 
-        # Проверяем администраторов по умолчанию
-        return user_id in self.default_admin_ids
+        return False
 
     def get_admin_users(self) -> List[User]:
         """Получить список всех администраторов"""
