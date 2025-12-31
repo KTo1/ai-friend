@@ -58,7 +58,6 @@ services:
 
       # Admin
       - DEFAULT_ADMIN_IDS=${DEFAULT_ADMIN_IDS}
-      -
     depends_on:
       - postgres
     ports:
