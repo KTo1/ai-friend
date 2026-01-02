@@ -68,7 +68,6 @@ create_directories() {
 
     mkdir -p logs
     mkdir -p postgres/backups
-    mkdir -p postgres/init
     mkdir -p postgres/data
     mkdir -p elk/elasticsearch/data
     mkdir -p elk/logstash
@@ -197,30 +196,6 @@ setup_elk() {
     chmod -R 755 elk
 
     log "ELK stack setup completed ✓"
-}
-
-# Create necessary database initialization
-create_db_init() {
-    log "Creating database initialization scripts..."
-
-    # Создаем базовый SQL init файл если не существует
-    if [ ! -f postgres/init/init.sql ]; then
-        cat > postgres/init/init.sql << 'EOF'
--- Friend Bot Database Initialization
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- Create additional indexes for performance
-CREATE INDEX IF NOT EXISTS idx_conversation_context_user_id_timestamp
-ON conversation_context(user_id, timestamp DESC);
-
-CREATE INDEX IF NOT EXISTS idx_user_activity_last_message
-ON user_activity(last_message_time DESC);
-
-CREATE INDEX IF NOT EXISTS idx_users_created_at
-ON users(created_at DESC);
-EOF
-        log "Database initialization script created ✓"
-    fi
 }
 
 # Create backup script
@@ -721,7 +696,6 @@ main() {
     create_directories
     create_logstash_config
     setup_elk
-    create_db_init
     create_backup_script
     setup_monitoring
     deploy_app
