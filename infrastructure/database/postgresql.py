@@ -50,6 +50,24 @@ class PostgreSQLDatabase:
         """Инициализация базы данных и создание таблиц"""
         try:
             with self.get_cursor() as cursor:
+                cursor.execute('''
+                                CREATE TABLE IF NOT EXISTS characters
+                                       (id SERIAL PRIMARY KEY,
+                                           name VARCHAR(100) NOT NULL UNIQUE,
+                                           description TEXT NOT NULL,
+                                           system_prompt TEXT NOT NULL,
+                                           avatar BYTEA NOT NULL,
+                                           avatar_mime_type VARCHAR(50) DEFAULT 'image/jpeg',
+                                           is_active BOOLEAN DEFAULT TRUE,
+                                           display_order INTEGER DEFAULT 0,
+                                           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                           )
+                               ''')
+
+                # Включение расширения vector для векторных операций
+                cursor.execute(''' CREATE EXTENSION IF NOT EXISTS vector; ''')
+
                 # Таблица пользователей
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS users (
@@ -79,24 +97,6 @@ class PostgreSQLDatabase:
                         last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
-
-                cursor.execute('''
-                                CREATE TABLE IF NOT EXISTS characters
-                                       (id SERIAL PRIMARY KEY,
-                                           name VARCHAR(100) NOT NULL UNIQUE,
-                                           description TEXT NOT NULL,
-                                           system_prompt TEXT NOT NULL,
-                                           avatar BYTEA NOT NULL,
-                                           avatar_mime_type VARCHAR(50) DEFAULT 'image/jpeg',
-                                           is_active BOOLEAN DEFAULT TRUE,
-                                           display_order INTEGER DEFAULT 0,
-                                           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                                           )
-                               ''')
-
-                # Включение расширения vector для векторных операций
-                cursor.execute(''' CREATE EXTENSION IF NOT EXISTS vector; ''')
 
                 # Таблица для RAG памяти (уже создается в коде, но можно добавить и здесь)
                 cursor.execute(''' 
