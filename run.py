@@ -30,7 +30,7 @@ token = os.getenv("TELEGRAM_BOT_TOKEN")
 print("TELEGRAM_BOT_TOKEN:", "SET" if token else "NOT SET")
 
 ai_provider = os.getenv("AI_PROVIDER")
-print("AI_PROVIDER:", "SET" if token else "NOT SET")
+print("AI_PROVIDER:", f"SET {ai_provider}" if token else "NOT SET")
 
 
 def check_required_vars():
