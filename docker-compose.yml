@@ -38,15 +38,6 @@ services:
       # Telegram
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 
-      # AI Provider
-      - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama2:7b}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - HF_API_KEY=${HF_API_KEY}
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
-
       # Monitoring
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - ENABLE_METRICS=true
