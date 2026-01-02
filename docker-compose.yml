@@ -25,6 +25,7 @@ services:
   # Приложение бота
   bot:
     build: .
+    env_file: .env
     environment:
       # Database
       - DB_HOST=postgres
