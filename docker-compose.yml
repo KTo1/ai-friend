@@ -29,7 +29,7 @@ services:
     environment:
       # Database
       - DB_HOST=postgres
-      - DB_PORT=5432
+      - DB_PORT=5433
       - DB_NAME=${DB_NAME:-friend_bot}
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD:-postgres}
