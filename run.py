@@ -29,11 +29,17 @@ else:
 token = os.getenv("TELEGRAM_BOT_TOKEN")
 print("TELEGRAM_BOT_TOKEN:", "SET" if token else "NOT SET")
 
+ai_provider = os.getenv("AI_PROVIDER")
+print("AI_PROVIDER:", "SET" if token else "NOT SET")
+
 
 def check_required_vars():
     """Проверка обязательных переменных в зависимости от провайдера"""
     ai_provider = os.getenv("AI_PROVIDER").lower()
     missing_vars = []
+
+    if len(ai_provider) == 0:
+        missing_vars.append("AI_PROVIDER")
 
     # Обязательные для всех
     if not os.getenv("TELEGRAM_BOT_TOKEN"):
@@ -53,13 +59,9 @@ def check_required_vars():
 
     return missing_vars
 
+
 if __name__ == "__main__":
     missing_vars = check_required_vars()
-
-    if missing_vars:
-        print(f"❌ Missing required environment variables: {', '.join(missing_vars)}")
-        print("Please check your .env file")
-        exit(1)
 
     if missing_vars:
         print(f"❌ Missing required environment variables: {', '.join(missing_vars)}")
