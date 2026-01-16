@@ -58,11 +58,6 @@ services:
 
       # Admin
       - DEFAULT_ADMIN_IDS=${DEFAULT_ADMIN_IDS}
-      -
-      # Proactive Messages
-      - PROACTIVE_CHECK_INTERVAL=${PROACTIVE_CHECK_INTERVAL:-600}
-      - PROACTIVE_MIN_MESSAGES=${PROACTIVE_MIN_MESSAGES:-4}
-      - PROACTIVE_MAX_PER_DAY=${PROACTIVE_MAX_PER_DAY:-2}
     depends_on:
       - postgres
     ports:
