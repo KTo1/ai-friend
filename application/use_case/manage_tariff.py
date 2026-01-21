@@ -65,7 +65,6 @@ class ManageTariffUseCase:
         message += "📏 **Лимиты сообщений:**\n"
         message += f"• Длина сообщения: {tariff.message_limits.max_message_length} символов\n"
         message += f"• История сообщений: {tariff.message_limits.max_context_messages}\n"
-        message += f"• Длина контекста: {tariff.message_limits.max_context_length} символов\n"
 
         return message
 

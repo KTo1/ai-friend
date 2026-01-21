@@ -511,7 +511,6 @@ class FriendBot:
         message += "📏 **Лимиты сообщений:**\n"
         message += f"• Макс. длина: {tariff.message_limits.max_message_length} символов\n"
         message += f"• История: {tariff.message_limits.max_context_messages} сообщений\n"
-        message += f"• Контекст: {tariff.message_limits.max_context_length} символов\n\n"
 
         message += "Лимиты защищают от перегрузки и помогают мне работать стабильно 💫"
 
@@ -574,7 +573,6 @@ class FriendBot:
 
         response += f"• Длина сообщения: до {tariff.message_limits.max_message_length} символов\n"
         response += f"• Сохраняется история: {tariff.message_limits.max_context_messages} сообщений\n"
-        response += f"• Длина контекста: {tariff.message_limits.max_context_length} токенов\n\n"
 
         # Особенности тарифа
         if tariff.features:
@@ -878,7 +876,6 @@ class FriendBot:
             message += "\n📏 **Лимиты тарифа:**\n"
             message += f"• Макс. длина сообщения: {tariff_info['message_limits']['max_message_length']}\n"
             message += f"• Макс. сообщений в контексте: {tariff_info['message_limits']['max_context_messages']}\n"
-            message += f"• Макс. длина контекста: {tariff_info['message_limits']['max_context_length']}\n"
 
         success = await self._safe_reply(update, message)
         if not success:

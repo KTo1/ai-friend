@@ -16,7 +16,6 @@ class MessageLimitConfig:
     """Конфигурация лимитов сообщений для тарифа"""
     max_message_length: int = 2000
     max_context_messages: int = 10
-    max_context_length: int = 4000
 
 
 @dataclass
@@ -67,7 +66,6 @@ class TariffPlan:
             'message_limits': {
                 'max_message_length': self.message_limits.max_message_length,
                 'max_context_messages': self.message_limits.max_context_messages,
-                'max_context_length': self.message_limits.max_context_length
             },
             'features': self.features,
             'created_at': self.created_at.isoformat(),

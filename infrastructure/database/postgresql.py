@@ -172,6 +172,7 @@ class PostgreSQLDatabase:
                     )
                 ''')
 
+
                 # Таблица пользовательских тарифов
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS user_tariffs (
@@ -179,7 +180,10 @@ class PostgreSQLDatabase:
                         tariff_plan_id INTEGER REFERENCES tariff_plans(id),
                         activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         expires_at TIMESTAMP,
-                        is_active BOOLEAN DEFAULT TRUE
+                        is_active BOOLEAN DEFAULT TRUE,
+                        
+                        CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+                        CONSTRAINT fk_tariff_plan FOREIGN KEY (tariff_plan_id) REFERENCES tariff_plans(id)                        
                     )
                 ''')
 

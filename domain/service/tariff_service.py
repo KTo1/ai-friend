@@ -21,10 +21,6 @@ class TariffService:
         """Получить тариф по ID"""
         return self.tariff_repo.get_tariff_plan(tariff_id)
 
-    def get_tariff_by_name(self, name: str) -> Optional[TariffPlan]:
-        """Получить тариф по имени"""
-        return self.tariff_repo.get_tariff_plan_by_name(name)
-
     def get_default_tariff(self) -> Optional[TariffPlan]:
         """Получить тариф по умолчанию"""
         return self.tariff_repo.get_default_tariff_plan()
@@ -95,7 +91,6 @@ class TariffService:
         message += "📏 **Лимиты сообщений:**\n"
         message += f"• Макс. длина сообщения: {tariff.message_limits.max_message_length} символов\n"
         message += f"• Макс. сообщений в истории: {tariff.message_limits.max_context_messages}\n"
-        message += f"• Макс. длина контекста: {tariff.message_limits.max_context_length} символов\n\n"
 
         if tariff.features:
             message += "🌟 **Особенности:**\n"
