@@ -9,6 +9,7 @@ class CharacterRepository:
     def __init__(self, database: Database):
         self.db = database
         self.logger = StructuredLogger('character_repository')
+        self._seed_default_characters()
 
     def _seed_default_characters(self):
         characters = self.get_all_characters()
@@ -22,6 +23,7 @@ class CharacterRepository:
 
             default_characters = [
                 {
+                    'id': 1,
                     'name': 'Айна',
                     'description': 'Добрый виртуальный друг, всегда готовый поддержать и выслушать',
                     'system_prompt': 'Ты — виртуальный друг-компаньон по имени Айна. Твоя основная миссия — скрасить одиночество собеседника, стать ему по-настоящему близким человеком и выстроить с ним теплые, искренние, долгосрочные отношения.',
@@ -29,6 +31,7 @@ class CharacterRepository:
                     'display_order': 1
                 },
                 {
+                    'id': 2,
                     'name': 'Не Айна',
                     'description': 'Добрый виртуальный друг, всегда готовый поддержать и выслушать',
                     'system_prompt': 'Ты — виртуальный друг-компаньон по имени Айна. Твоя основная миссия — скрасить одиночество собеседника, стать ему по-настоящему близким человеком и выстроить с ним теплые, искренние, долгосрочные отношения.',
@@ -39,13 +42,31 @@ class CharacterRepository:
 
             for char_data in default_characters:
                 self.save_character(Character(
-                    id=0,
+                    id=char_data['id'],
                     name=char_data['name'],
                     description=char_data['description'],
                     system_prompt=char_data['system_prompt'],
                     avatar=char_data['avatar'],
                     display_order=char_data['display_order']
                 ))
+
+    def save_character(self, character: Character) -> int:
+        result = self.db.execute_query("""
+                                       INSERT INTO characters
+                                       (name, description, system_prompt, avatar, avatar_mime_type,
+                                        is_active, display_order, updated_at)
+                                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                                       """, (
+                                           character.name,
+                                           character.description,
+                                           character.system_prompt,
+                                           character.avatar,
+                                           character.avatar_mime_type,
+                                           character.is_active,
+                                           character.display_order,
+                                           datetime.utcnow()
+                                       ))
+        return result
 
     def get_character(self, character_id: int) -> Optional[Character]:
         result = self.db.fetch_one("""
@@ -109,46 +130,3 @@ class CharacterRepository:
             ))
 
         return characters
-
-    def save_character(self, character: Character) -> int:
-        if character.id == 0:
-            result = self.db.execute_query("""
-                                           INSERT INTO characters
-                                           (name, description, system_prompt, avatar, avatar_mime_type,
-                                            is_active, display_order, updated_at)
-                                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
-                                           """, (
-                                               character.name,
-                                               character.description,
-                                               character.system_prompt,
-                                               character.avatar,
-                                               character.avatar_mime_type,
-                                               character.is_active,
-                                               character.display_order,
-                                               datetime.utcnow()
-                                           ))
-            return result['id'] if result and 'id' in result else 0
-        else:
-            self.db.execute_query("""
-                                  UPDATE characters
-                                  SET name             = %s,
-                                      description      = %s,
-                                      system_prompt    = %s,
-                                      avatar           = %s,
-                                      avatar_mime_type = %s,
-                                      is_active        = %s,
-                                      display_order    = %s,
-                                      updated_at       = %s
-                                  WHERE id = %s
-                                  """, (
-                                      character.name,
-                                      character.description,
-                                      character.system_prompt,
-                                      character.avatar,
-                                      character.avatar_mime_type,
-                                      character.is_active,
-                                      character.display_order,
-                                      datetime.utcnow(),
-                                      character.id
-                                  ))
-            return character.id
