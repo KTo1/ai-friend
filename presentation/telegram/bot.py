@@ -536,79 +536,11 @@ class FriendBot:
                 if success:
                     user_tariff = self.tariff_service.get_user_tariff(user_id)
 
-            if not user_tariff:
-                response = (
-                    "📊 **Ваш тарифный план:**\n\n"
-                    "❌ Тарифный план не назначен\n\n"
-                    "💡 Обратитесь к администратору для назначения тарифа"
-                )
-                success = await self._safe_reply(update, response)
-                if not success:
-                    self.logger.error(f"Failed to send tariff info to user {user_id}")
-                return
-
-        # Формируем сообщение для пользователя
-        tariff = user_tariff.tariff_plan
-        response = f"📊 **Ваш тарифный план:**\n\n"
-        response += f"• **{tariff.name}** - {tariff.price} руб./месяц\n"
-        response += f"• {tariff.description}\n\n"
-
-        # Информация о сроке действия
-        if user_tariff.expires_at:
-            days_remaining = user_tariff.days_remaining()
-            response += f"• Истекает: {user_tariff.expires_at.strftime('%d.%m.%Y')}\n"
-            response += f"• Осталось дней: {days_remaining}\n"
-            if user_tariff.is_expired():
-                response += "• ⚠️ **ВАШ ТАРИФ ИСТЕК**\n"
-        else:
-            response += "• Срок действия: бессрочно\n"
-
-        response += f"• Статус: {'✅ Активен' if user_tariff.is_active else '❌ Неактивен'}\n\n"
-
-        # Лимиты тарифа (только важная информация для пользователя)
-        response += "📏 **Ваши лимиты:**\n"
-        response += f"• Сообщений в минуту: {tariff.rate_limits.messages_per_minute}\n"
-        response += f"• Сообщений в час: {tariff.rate_limits.messages_per_hour}\n"
-        response += f"• Сообщений в день: {tariff.rate_limits.messages_per_day}\n\n"
-
-        response += f"• Длина сообщения: до {tariff.message_limits.max_message_length} символов\n"
-        response += f"• Сохраняется история: {tariff.message_limits.max_context_messages} сообщений\n"
-
-        # Особенности тарифа
-        if tariff.features:
-            response += "🌟 **Возможности:**\n"
-            if 'ai_providers' in tariff.features:
-                providers = ', '.join(tariff.features['ai_providers'])
-                response += f"• AI-провайдеры: {providers}\n"
-            if 'support' in tariff.features:
-                support_level = tariff.features['support']
-                support_text = {
-                    'basic': 'Базовая поддержка',
-                    'priority': 'Приоритетная поддержка',
-                    '24/7': 'Поддержка 24/7'
-                }.get(support_level, support_level)
-                response += f"• Поддержка: {support_text}\n"
-
-        response += "\n💡 Используйте /limits чтобы посмотреть текущее использование"
+        response = self.tariff_service.get_tariff_info(user_tariff.tariff_plan_id)
 
         success = await self._safe_reply(update, response)
         if not success:
             self.logger.error(f"Failed to send tariff info to user {user_id}")
-
-    async def all_tariffs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать пользователю все доступные тарифные планы"""
-        user_id = update.effective_user.id
-        self.logger.info("User requested tariffs list", extra={'user_id': user_id})
-
-        message = self.manage_tariff_uc.get_all_tariffs()
-
-        full_message = "📋 **Доступные тарифные планы:**\n\n" \
-                       "💡 Твой текущий тариф: используй /tariff\n\n" \
-                       + message
-
-        success = await self._safe_reply(update, full_message)
-        if not success:
-            self.logger.error(f"Failed to send tariffs list to user {user_id}")
 
     async def admin_users(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список пользователей"""
@@ -1120,7 +1052,6 @@ class FriendBot:
         self.application.add_handler(CommandHandler("reset", self.reset))
         self.application.add_handler(CommandHandler("limits", self.limits))
         self.application.add_handler(CommandHandler("tariff", self.tariff))
-        self.application.add_handler(CommandHandler("all_tariffs", self.all_tariffs))
         self.application.add_handler(CommandHandler('choose_character', self.choose_character))
 
         # Административные команды

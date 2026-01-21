@@ -80,17 +80,18 @@ class TariffService:
         message = f"📋 **Тарифный план: {tariff.name}**\n\n"
         message += f"📝 Описание: {tariff.description}\n"
         message += f"💰 Цена: {tariff.price} руб./месяц\n"
-        message += f"🔄 Статус: {'Активен' if tariff.is_active else 'Неактивен'}\n"
-        message += f"⚙️ По умолчанию: {'Да' if tariff.is_default else 'Нет'}\n\n"
+        # message += f"🔄 Статус: {'Активен' if tariff.is_active else 'Неактивен'}\n"
 
-        message += "🕒 **Рейт-лимиты:**\n"
-        message += f"• В минуту: {tariff.rate_limits.messages_per_minute} сообщений\n"
-        message += f"• В час: {tariff.rate_limits.messages_per_hour} сообщений\n"
-        message += f"• В день: {tariff.rate_limits.messages_per_day} сообщений\n\n"
+        # message += f"⚙️ По умолчанию: {'Да' if tariff.is_default else 'Нет'}\n\n"
 
-        message += "📏 **Лимиты сообщений:**\n"
-        message += f"• Макс. длина сообщения: {tariff.message_limits.max_message_length} символов\n"
-        message += f"• Макс. сообщений в истории: {tariff.message_limits.max_context_messages}\n"
+        # message += "🕒 **Рейт-лимиты:**\n"
+        # message += f"• В минуту: {tariff.rate_limits.messages_per_minute} сообщений\n"
+        # message += f"• В час: {tariff.rate_limits.messages_per_hour} сообщений\n"
+        # message += f"• В день: {tariff.rate_limits.messages_per_day} сообщений\n\n"
+        #
+        # message += "📏 **Лимиты сообщений:**\n"
+        # message += f"• Макс. длина сообщения: {tariff.message_limits.max_message_length} символов\n"
+        # message += f"• Макс. сообщений в истории: {tariff.message_limits.max_context_messages}\n"
 
         if tariff.features:
             message += "🌟 **Особенности:**\n"

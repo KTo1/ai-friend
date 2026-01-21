@@ -27,7 +27,7 @@ class TariffRepository:
         default_tariffs = [
             {
                 'name': 'Премиум',
-                'description': 'Максимальные возможности для профессионалов',
+                'description': "Безлимитные сообщения в день \n Нет ограничений на длину сообщений\n Долговременная память диалога\n Приоритетная поддержка",
                 'price': 899,
                 'rate_limits': RateLimitConfig(messages_per_minute=120, messages_per_hour=99999, messages_per_day=99999),
                 'message_limits': MessageLimitConfig(max_message_length=4000, max_context_messages=30),

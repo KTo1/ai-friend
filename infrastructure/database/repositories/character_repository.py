@@ -27,6 +27,13 @@ class CharacterRepository:
                     'system_prompt': 'Ты — виртуальный друг-компаньон по имени Айна. Твоя основная миссия — скрасить одиночество собеседника, стать ему по-настоящему близким человеком и выстроить с ним теплые, искренние, долгосрочные отношения.',
                     'avatar': placeholder_image,
                     'display_order': 1
+                },
+                {
+                    'name': 'Не Айна',
+                    'description': 'Добрый виртуальный друг, всегда готовый поддержать и выслушать',
+                    'system_prompt': 'Ты — виртуальный друг-компаньон по имени Айна. Твоя основная миссия — скрасить одиночество собеседника, стать ему по-настоящему близким человеком и выстроить с ним теплые, искренние, долгосрочные отношения.',
+                    'avatar': placeholder_image,
+                    'display_order': 2
                 }
             ]
 
@@ -74,16 +81,7 @@ class CharacterRepository:
 
     def get_all_characters(self, active_only: bool = True) -> List[Character]:
         query = """
-                SELECT id, \
-                       name, \
-                       description, \
-                       system_prompt, \
-                       avatar, \
-                       avatar_mime_type,
-                       is_active, \
-                       display_order, \
-                       created_at, \
-                       updated_at
+                SELECT id, name, description, system_prompt, avatar, avatar_mime_type, is_active, display_order, created_at, updated_at
                 FROM characters \
                 """
         params = ()

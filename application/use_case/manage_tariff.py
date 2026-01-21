@@ -53,19 +53,6 @@ class ManageTariffUseCase:
         else:
             message += "• Срок действия: бессрочно\n"
 
-        message += f"• Статус: {'Активен' if user_tariff.is_active else 'Неактивен'}\n\n"
-
-        # ИНФОРМАЦИЯ О ЛИМИТАХ ТАРИФА
-        tariff = user_tariff.tariff_plan
-        message += "🕒 **Рейт-лимиты:**\n"
-        message += f"• В минуту: {tariff.rate_limits.messages_per_minute} сообщений\n"
-        message += f"• В час: {tariff.rate_limits.messages_per_hour} сообщений\n"
-        message += f"• В день: {tariff.rate_limits.messages_per_day} сообщений\n\n"
-
-        message += "📏 **Лимиты сообщений:**\n"
-        message += f"• Длина сообщения: {tariff.message_limits.max_message_length} символов\n"
-        message += f"• История сообщений: {tariff.message_limits.max_context_messages}\n"
-
         return message
 
     @trace_span("usecase.remove_user_tariff", attributes={"component": "application"})
