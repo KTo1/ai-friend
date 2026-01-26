@@ -54,13 +54,14 @@ class CharacterRepository:
         result = self.db.execute_query("""
                                        INSERT INTO characters
                                        (name, description, system_prompt, avatar, avatar_mime_type,
-                                        is_active, display_order, updated_at)
-                                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                                        avatar_file_id, is_active, display_order, updated_at)
+                                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
                                        """, (
                                            character.name,
                                            character.description,
                                            character.system_prompt,
                                            character.avatar,
+                                           character.avatar_file_id,
                                            character.avatar_mime_type,
                                            character.is_active,
                                            character.display_order,
@@ -76,6 +77,7 @@ class CharacterRepository:
                                           system_prompt,
                                           avatar,
                                           avatar_mime_type,
+                                          avatar_file_id,  
                                           is_active,
                                           display_order,
                                           created_at,
@@ -93,6 +95,7 @@ class CharacterRepository:
                 system_prompt=result['system_prompt'],
                 avatar=result['avatar'],
                 avatar_mime_type=result['avatar_mime_type'],
+                avatar_file_id=result['avatar_file_id'],
                 is_active=bool(result['is_active']),
                 display_order=result['display_order'],
                 created_at=result['created_at'],
@@ -102,7 +105,7 @@ class CharacterRepository:
 
     def get_all_characters(self, active_only: bool = True) -> List[Character]:
         query = """
-                SELECT id, name, description, system_prompt, avatar, avatar_mime_type, is_active, display_order, created_at, updated_at
+                SELECT id, name, description, system_prompt, avatar, avatar_mime_type, avatar_file_id, is_active, display_order, created_at, updated_at
                 FROM characters \
                 """
         params = ()
@@ -123,6 +126,7 @@ class CharacterRepository:
                 system_prompt=result['system_prompt'],
                 avatar=result['avatar'],
                 avatar_mime_type=result['avatar_mime_type'],
+                avatar_file_id = result['avatar_file_id'],
                 is_active=bool(result['is_active']),
                 display_order=result['display_order'],
                 created_at=result['created_at'],

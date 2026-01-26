@@ -1,5 +1,4 @@
-# 📄 domain/service/tariff_service.py
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
 from domain.entity.tariff_plan import TariffPlan, UserTariff
 from infrastructure.database.repositories.tariff_repository import TariffRepository

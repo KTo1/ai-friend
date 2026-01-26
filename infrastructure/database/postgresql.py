@@ -138,7 +138,8 @@ class PostgreSQLDatabase:
                         character_id INTEGER REFERENCES characters(id), 
                         role TEXT NOT NULL,
                         content TEXT NOT NULL,
-                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        deleted_at TIMESTAMP
                     )
                 ''')
 
