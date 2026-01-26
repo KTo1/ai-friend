@@ -35,23 +35,24 @@ class ManageTariffUseCase:
     @trace_span("usecase.get_user_tariff", attributes={"component": "application"})
     def get_user_tariff_info(self, user_id: int) -> str:
         """Получить информацию о тарифе пользователя"""
+
         user_tariff = self.tariff_service.get_user_tariff(user_id)
+        tariff = self.tariff_service.get_tariff_by_id(user_tariff.tariff_plan_id)
 
         if not user_tariff:
             return f"ℹ️ У пользователя {user_id} не назначен тарифный план"
 
-        message = f"📊 **Тариф пользователя {user_id}:**\n\n"
-        message += f"• Тариф: **{user_tariff.tariff_plan.name}**\n"
-        message += f"• Активирован: {user_tariff.activated_at.strftime('%d.%m.%Y %H:%M')}\n"
+        message = f"📋 **Тарифный план: {tariff.name}**\n\n"
 
-        if user_tariff.expires_at:
-            days_remaining = user_tariff.days_remaining()
-            message += f"• Истекает: {user_tariff.expires_at.strftime('%d.%m.%Y')}\n"
-            message += f"• Осталось дней: {days_remaining}\n"
-            if user_tariff.is_expired():
-                message += "• ⚠️ **ТАРИФ ИСТЕК**\n"
+        days_remaining = user_tariff.days_remaining()
+        message += f"• Истекает: {user_tariff.expires_at.strftime('%d.%m.%Y %H:%M')}\n"
+        if user_tariff.is_expired():
+            message += "• ⚠️ **ТАРИФ ИСТЕК**\n\n"
         else:
-            message += "• Срок действия: бессрочно\n"
+            message += f"• Осталось дней: {days_remaining}\n\n"
+
+        message += f"📝 {tariff.description}\n"
+        message += f"💰 Цена: {tariff.price} ⭐/30 дней\n"
 
         return message
 

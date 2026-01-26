@@ -102,4 +102,4 @@ class UserTariff:
         if self.expires_at is None:
             return None
         remaining = self.expires_at - datetime.utcnow()
-        return max(0, remaining.days)
+        return max(0, remaining.days + 1)

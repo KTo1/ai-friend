@@ -79,7 +79,7 @@ class TariffService:
 
         message = f"📋 **Тарифный план: {tariff.name}**\n\n"
         message += f"📝 Описание: {tariff.description}\n"
-        message += f"💰 Цена: {tariff.price} руб./месяц\n"
+        message += f"💰 Цена: {tariff.price} ⭐/30 дней\n"
         # message += f"🔄 Статус: {'Активен' if tariff.is_active else 'Неактивен'}\n"
 
         # message += f"⚙️ По умолчанию: {'Да' if tariff.is_default else 'Нет'}\n\n"
