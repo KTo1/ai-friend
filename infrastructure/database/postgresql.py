@@ -57,6 +57,7 @@ class PostgreSQLDatabase:
                                            system_prompt TEXT NOT NULL,
                                            avatar BYTEA NOT NULL,
                                            avatar_mime_type VARCHAR(50) DEFAULT 'image/jpeg',
+                                           avatar_file_id TEXT,
                                            is_active BOOLEAN DEFAULT TRUE,
                                            display_order INTEGER DEFAULT 0,
                                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

@@ -61,8 +61,8 @@ class CharacterRepository:
                                            character.description,
                                            character.system_prompt,
                                            character.avatar,
-                                           character.avatar_file_id,
                                            character.avatar_mime_type,
+                                           character.avatar_file_id,
                                            character.is_active,
                                            character.display_order,
                                            datetime.utcnow()
@@ -134,3 +134,16 @@ class CharacterRepository:
             ))
 
         return characters
+
+    def update_character_avatar_file_id(self, character_id: int, file_id: str) -> bool:
+        try:
+            self.db.execute_query('''
+                UPDATE characters 
+                SET avatar_file_id = %s, updated_at = %s
+                WHERE id = %s
+            ''', (file_id, datetime.utcnow(), character_id))
+            self.logger.info(f'Updated avatar file_id for character {character_id}: {file_id[:20]}...')
+            return True
+        except Exception as e:
+            self.logger.error(f'Error updating avatar file_id for character {character_id}: {e}')
+            return False

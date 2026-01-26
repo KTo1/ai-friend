@@ -168,7 +168,8 @@ class FriendBot:
                 photo_bytes=character.avatar,
                 caption=f"*{character.name}*\n\n{character.description}\n\nИспользуйте кнопки навигации для просмотра других персонажей.",
                 parse_mode='Markdown',
-                reply_markup=reply_markup
+                reply_markup=reply_markup,
+                character=character
             )
 
             if not success:
@@ -245,33 +246,60 @@ class FriendBot:
             await query.answer('Используйте кнопки для навигации')
 
     async def _send_photo_with_bytes(self, chat_id: int, photo_bytes: bytes, caption: str = None,
-                                     reply_markup=None, parse_mode: str = None) -> bool:
+                                     reply_markup=None, parse_mode: str = None,
+                                     character: Character = None) -> bool:
         """
         Отправляет фото из bytes с использованием временного файла
         """
+
         if not hasattr(self, 'application') or not self.application:
             self.logger.error('Bot application not available')
             return False
 
         try:
-            # Создаем временный файл для хранения изображения
+            if character and character.avatar_file_id:
+                try:
+                    await self.application.bot.send_photo(
+                        chat_id=chat_id,
+                        photo=character.avatar_file_id,
+                        caption=caption,
+                        parse_mode=parse_mode,
+                        reply_markup=reply_markup
+                    )
+
+                    self.logger.debug(f'Used cached file_id for character {character.id}')
+                    return True
+                except Exception as e:
+                    self.logger.warning(f'Cached file_id invalid, reuploading: {e}')
+
             with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
                 temp_file.write(photo_bytes)
                 temp_file_path = temp_file.name
 
             try:
-                # Открываем файл и отправляем
                 with open(temp_file_path, 'rb') as photo_file:
-                    await self.application.bot.send_photo(
+                    message = await self.application.bot.send_photo(
                         chat_id=chat_id,
                         photo=InputFile(photo_file),
                         caption=caption,
                         parse_mode=parse_mode,
                         reply_markup=reply_markup
                     )
+
+                if character and message.photo:
+                    photo = message.photo[-1]
+                    file_id = photo.file_id
+
+                    success = self.character_repo.update_character_avatar_file_id(
+                        character.id, file_id
+                    )
+
+                    if success:
+                        character.update_avatar_file_id(file_id)
+                        self.logger.info(f'Saved avatar file_id for character {character.id}')
+
                 return True
             finally:
-                # Удаляем временный файл
                 try:
                     os.unlink(temp_file_path)
                 except Exception as e:
