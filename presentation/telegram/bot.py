@@ -4,7 +4,9 @@ import asyncio
 import tempfile
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
+from telegram.constants import ParseMode
 
+from presentation.telegram.markdown_utils import MarkdownFormatter
 from presentation.telegram.middleware import TelegramMiddleware
 
 from domain.entity.character import Character
@@ -163,11 +165,14 @@ class FriendBot:
 
         # Отправляем фото с описанием
         try:
+            caption_text = f'*{character.name}*\n\n{character.description}\n\nИспользуйте кнопки навигации для просмотра других персонажей.'
+            escaped_caption = MarkdownFormatter.format_text(caption_text, ParseMode.MARKDOWN_V2)
+
             success = await self._send_photo_with_bytes(
                 chat_id=chat_id,
                 photo_bytes=character.avatar,
-                caption=f"*{character.name}*\n\n{character.description}\n\nИспользуйте кнопки навигации для просмотра других персонажей.",
-                parse_mode='Markdown',
+                caption=escaped_caption,
+                parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=reply_markup,
                 character=character
             )
@@ -178,10 +183,12 @@ class FriendBot:
         except Exception as e:
             self.logger.error(f'Error sending character photo: {e}')
             # Если не удалось отправить фото, отправляем только текст
+            text = f'*{character.name}*\n\n{character.description}\n\nИспользуйте кнопки навигации для просмотра других персонажей.'
+            escaped_text = MarkdownFormatter.format_text(text, ParseMode.MARKDOWN_V2)
             await self._safe_send_message(
                 chat_id,
-                f"*{character.name}*\n\n{character.description}\n\nИспользуйте кнопки навигации для просмотра других персонажей.",
-                parse_mode='Markdown',
+                text= escaped_text,
+                parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=reply_markup
             )
 
@@ -219,7 +226,7 @@ class FriendBot:
                         try:
                             await query.edit_message_caption(
                                 caption=f"✅ *Вы выбрали: {character.name}*\n\n{character.description}\n\nТеперь вы можете общаться! Напишите что-нибудь.",
-                                parse_mode='Markdown'
+                                parse_mode='MarkdownV2'
                             )
                         except Exception as e:
                             self.logger.warning(f'Could not edit caption, sending new message: {e}')
@@ -227,13 +234,13 @@ class FriendBot:
                             await self._safe_send_message(
                                 chat_id,
                                 f"✅ *Вы выбрали: {character.name}*\n\n{character.description}\n\nТеперь вы можете общаться! Напишите что-нибудь.",
-                                parse_mode='Markdown'
+                                parse_mode='MarkdownV2'
                             )
                     else:
                         # У сообщения только текст, редактируем его
                         await query.edit_message_text(
                             f"✅ *Вы выбрали: {character.name}*\n\n{character.description}\n\nТеперь вы можете общаться! Напишите что-нибудь.",
-                            parse_mode='Markdown'
+                            parse_mode='MarkdownV2'
                         )
                 else:
                     await query.answer(message, show_alert=True)
@@ -323,10 +330,12 @@ class FriendBot:
             self.logger.error("Bot application not available")
             return False
 
+        escaped_text = MarkdownFormatter.format_text(text, ParseMode.MARKDOWN_V2)
         return await self.telegram_sender.reply_to_message(
-            bot=self.application.bot,  # ДОБАВЛЕНО: явно передаем бота
+            bot=self.application.bot,
             update=update,
-            text=text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            text=escaped_text,
             **kwargs
         )
 
@@ -875,6 +884,7 @@ class FriendBot:
 
 [ КНОПКА: 🔓 Продолжить общение за 799⭐/30 дней ]
 """
+
             success = await self._safe_reply(update, message_paywall)
 
             return
@@ -968,11 +978,10 @@ class FriendBot:
 💫 Я здесь чтобы быть твоим другом!
 
 Команды:
-/start - начать/продолжить общение
-/limits - текущее использование лимитов
-/tariff - мой тарифный план и лимиты
-/all_tariffs - все доступные тарифы
-/reset - начать разговор заново
+/start - начать общение
+/info - текущая история
+/reset - сбросить разговор
+/premium - перейти на премиум
 /help - помощь
 
 Я запомню:
@@ -992,18 +1001,14 @@ class FriendBot:
         if not success:
             self.logger.error(f"Failed to send help to user {update.effective_user.id}")
 
-    async def choose_character(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
-        self.logger.info('Character selection requested', extra={'user_id': user_id})
-        await self.show_character_carousel(update)
-
     def setup_handlers(self):
         self.application.add_handler(CommandHandler("start", self.start))
-        self.application.add_handler(CommandHandler("help", self.help_command))
+        self.application.add_handler(CommandHandler("info", self.start))
         self.application.add_handler(CommandHandler("reset", self.reset))
         self.application.add_handler(CommandHandler("limits", self.limits))
         self.application.add_handler(CommandHandler("tariff", self.tariff))
-        self.application.add_handler(CommandHandler('choose_character', self.choose_character))
+
+        self.application.add_handler(CommandHandler("help", self.help_command))
 
         # Административные команды
         self.application.add_handler(CommandHandler("admin_users", self.admin_users))
