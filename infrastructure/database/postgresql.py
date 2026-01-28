@@ -1,4 +1,3 @@
-import logging
 import psycopg2
 import psycopg2.extras
 from typing import List, Dict, Optional, Any
@@ -50,54 +49,24 @@ class PostgreSQLDatabase:
         """Инициализация базы данных и создание таблиц"""
         try:
             with self.get_cursor() as cursor:
-
                 cursor.execute('''
-                               CREATE TABLE IF NOT EXISTS characters
-                                      (id SERIAL PRIMARY KEY,
-                                          name VARCHAR(100) NOT NULL UNIQUE,
-                                          description TEXT NOT NULL,
-                                          system_prompt TEXT NOT NULL,
-                                          avatar BYTEA NOT NULL,
-                                          avatar_mime_type VARCHAR(50) DEFAULT 'image/jpeg',
-                                          is_active BOOLEAN DEFAULT TRUE,
-                                          display_order INTEGER DEFAULT 0,
-                                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                                          )
-                              ''')
+                                CREATE TABLE IF NOT EXISTS characters
+                                       (id SERIAL PRIMARY KEY,
+                                           name VARCHAR(100) NOT NULL UNIQUE,
+                                           description TEXT NOT NULL,
+                                           system_prompt TEXT NOT NULL,
+                                           avatar BYTEA NOT NULL,
+                                           avatar_mime_type VARCHAR(50) DEFAULT 'image/jpeg',
+                                           avatar_file_id TEXT,
+                                           is_active BOOLEAN DEFAULT TRUE,
+                                           display_order INTEGER DEFAULT 0,
+                                           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                           )
+                               ''')
 
-                                   # Включение расширения vector для векторных операций
+                # Включение расширения vector для векторных операций
                 cursor.execute(''' CREATE EXTENSION IF NOT EXISTS vector; ''')
-
-                # Таблица для RAG памяти (уже создается в коде, но можно добавить и здесь)
-                cursor.execute(''' 
-                    CREATE TABLE IF NOT EXISTS user_rag_memories (
-                    id SERIAL PRIMARY KEY,
-                    user_id BIGINT NOT NULL,
-                    character_id INTEGER NOT NULL,
-                    memory_type VARCHAR(40) NOT NULL,
-                    content TEXT NOT NULL,
-                    source_message TEXT,
-                    importance_score FLOAT DEFAULT 0.5,
-                    embedding vector(312), -- Используем расширение vector
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    
-                    CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-                    CONSTRAINT fk_character FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
-                    );
-                ''')
-
-                #Индекс для быстрого векторного поиска
-                cursor.execute(''' CREATE INDEX IF NOT EXISTS idx_memory_embedding
-                ON user_rag_memories
-                USING ivfflat (embedding vector_cosine_ops)
-                WITH (lists = 100);''')
-
-                #  Индексы для эффективного поиска
-                cursor.execute(''' CREATE INDEX IF NOT EXISTS idx_rag_memories_user_id ON user_rag_memories(user_id);''')
-                cursor.execute(''' CREATE INDEX IF NOT EXISTS idx_rag_memories_importance ON user_rag_memories(importance_score DESC); ''')
-                cursor.execute(''' CREATE INDEX IF NOT EXISTS idx_rag_memories_type ON user_rag_memories(memory_type); ''')
 
                 # Таблица пользователей
                 cursor.execute('''
@@ -129,6 +98,39 @@ class PostgreSQLDatabase:
                     )
                 ''')
 
+                # Таблица для RAG памяти (уже создается в коде, но можно добавить и здесь)
+                cursor.execute(''' 
+                     CREATE TABLE IF NOT EXISTS user_rag_memories (
+                     id SERIAL PRIMARY KEY,
+                     user_id BIGINT NOT NULL,
+                     character_id INTEGER NOT NULL,
+                     memory_type VARCHAR(40) NOT NULL,
+                     content TEXT NOT NULL,
+                     source_message TEXT,
+                     importance_score FLOAT DEFAULT 0.5,
+                     embedding vector(312), -- Используем расширение vector
+                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                     CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+                     CONSTRAINT fk_character FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+                     );
+                 ''')
+
+                # Индекс для быстрого векторного поиска
+                cursor.execute(''' CREATE INDEX IF NOT EXISTS idx_memory_embedding
+                 ON user_rag_memories
+                 USING ivfflat (embedding vector_cosine_ops)
+                 WITH (lists = 100);''')
+
+                #  Индексы для эффективного поиска
+                cursor.execute(
+                    ''' CREATE INDEX IF NOT EXISTS idx_rag_memories_user_id ON user_rag_memories(user_id);''')
+                cursor.execute(
+                    ''' CREATE INDEX IF NOT EXISTS idx_rag_memories_importance ON user_rag_memories(importance_score DESC); ''')
+                cursor.execute(
+                    ''' CREATE INDEX IF NOT EXISTS idx_rag_memories_type ON user_rag_memories(memory_type); ''')
+
                 # Таблица контекста разговоров
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS conversation_context (
@@ -137,7 +139,8 @@ class PostgreSQLDatabase:
                         character_id INTEGER REFERENCES characters(id), 
                         role TEXT NOT NULL,
                         content TEXT NOT NULL,
-                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        deleted_at TIMESTAMP
                     )
                 ''')
 

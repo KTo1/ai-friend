@@ -140,15 +140,6 @@ class RAGService:
             self.logger.error(f"Failed to parse LLM response: {response}")
             return {"memories": []}
 
-    def _format_conversation_context(self, context: List[Dict]) -> str:
-        """Форматирование контекста разговора для промпта"""
-        formatted = []
-        for msg in context[-5:]:  # Берем последние 5 сообщений
-            role = "Пользователь" if msg['role'] == 'user' else "Айна"
-            formatted.append(f"{role}: {msg['content']}")
-
-        return "\n".join(formatted)
-
     def prepare_memories_for_context(self, memories: List[RAGMemory], max_tokens: int = 500) -> str:
         """Подготовка воспоминаний для включения в контекст диалога"""
         if not memories:

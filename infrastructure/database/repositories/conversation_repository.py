@@ -1,4 +1,5 @@
 from typing import List, Dict
+from datetime import datetime
 from infrastructure.database.database import Database
 
 
@@ -19,13 +20,15 @@ class ConversationRepository:
         results = self.db.fetch_all('''
             SELECT role, content 
             FROM conversation_context 
-            WHERE user_id = %s AND character_id = %s
-            ORDER BY timestamp DESC 
+            WHERE user_id = %s AND character_id = %s AND deleted_at is NULL
+            ORDER BY timestamp ASC 
             LIMIT %s
         ''', (user_id, character_id, max_context_messages))
 
-        return [{"role": row["role"], "content": row["content"]} for row in reversed(results)]
+        return [{'role': row['role'], 'content': row['content']} for row in results]
 
     def clear_conversation(self, user_id: int, character_id: int):
         """Очистить историю разговора"""
-        self.db.execute_query('DELETE FROM conversation_context WHERE user_id = %s AND character_id = %s', (user_id, character_id))
+        #self.db.execute_query('DELETE FROM conversation_context WHERE user_id = %s AND character_id = %s', (user_id, character_id))
+        self.db.execute_query('UPDATE conversation_context SET deleted_at = %s WHERE user_id = %s AND character_id = %s',
+                              (datetime.utcnow(), user_id, character_id))

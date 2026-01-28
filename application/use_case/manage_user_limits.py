@@ -50,7 +50,6 @@ class ManageUserLimitsUseCase:
             'message_limits': {
                 'max_message_length': tariff.message_limits.max_message_length,
                 'max_context_messages': tariff.message_limits.max_context_messages,
-                'max_context_length': tariff.message_limits.max_context_length
             }
         }
 

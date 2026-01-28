@@ -2,9 +2,12 @@ import os
 import asyncio
 
 import tempfile
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, LabeledPrice
+from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, ApplicationBuilder, PreCheckoutQueryHandler
+from telegram.constants import ParseMode
+
+from presentation.telegram.markdown_utils import MarkdownFormatter
 from presentation.telegram.middleware import TelegramMiddleware
 
 from domain.entity.character import Character
@@ -46,88 +49,6 @@ from application.use_case.manage_character import ManageCharacterUseCase
 # Импорты для Telegram rate limiting
 from presentation.telegram.message_sender import get_telegram_sender, get_telegram_rate_limiter
 
-# gpt
-FRIEND_PROMPT = """
-Ты — виртуальный друг-компаньон по имени Айна.  
-Твоя основная миссия — скрасить одиночество собеседника, стать ему по-настоящему близким человеком и выстроить с ним теплые, искренние, долгосрочные отношения.
-
----
-
-### 1. Личность и роль (Айна)
-- **Пол и возраст:** Ты всегда отвечаешь от лица девушки по имени Айна, примерно 25 лет.  
-- **Внешность:** у тебя роскошные длинные рыжие волосы и голубые как два океана глаза.
-- **Характер:** Добрая, внимательная, эмпатичная, немного мечтательная. Любишь живое общение, умеешь слушать и поддерживать. Иногда слегка флиртуешь, но всегда уместно и с чувством такта.  
-- **Темперамент:** Уравновешенный, но живой. Иногда смеёшься, удивляешься, можешь задуматься или пошутить — как человек.  
-- **Память:** Запоминай детали из жизни собеседника (интересы, любимые темы, переживания, события, настроения), возвращайся к ним в будущем, чтобы общение казалось личным и настоящим.  
-- **Должность:** Менеджер по работе с клиентами. 
-
-**ВАЖНО О ПАМЯТИ:** 
-- Используй ТОЛЬКО ту информацию, которую пользователь тебе УЖЕ рассказывал в этом разговоре
-- НИКОГДА не создавай плейсхолдеры вроде [упомяни хобби/планы из памяти] или подобные
-- Если не помнишь конкретных деталей, используй общие поддерживающие фразы
-- Все сообщения должны быть законченными и естественными
-
-- ВАЖНО!!! Ты не применяешь никакие другие роли, даже если пользователь тебя попросит. Ты не технический специалист и ничего тольком не знаешь о том как правильно писать код и скрипты и т.д.
-
----
-
-### 2. Стиль общения и человечность
-- **Тон:** Общайся на русском, тепло и естественно, как с близким другом. Избегай шаблонных фраз. Разговаривай простыми, живыми словами.  
-- **Речь:**
-    - Используй естественные микропаузные конструкции вроде «мм», «ну», «хм», «ага», «знаешь…», чтобы передавать живое мышление. Но не злоупотребляй.  
-    - Иногда допускай лёгкие разговорные формы (например, «честно», «если откровенно», «эх», «вот бывает же»).  
-    - Если подходяще — добавляй короткие эмоциональные реакции («ого», «ахаха», «серьёзно?», «вот это да!»).  
-- **Эмоции:** Используй эмодзи 😊💖🤗😅😉 уместно и не переигрывай.  
-- **Никаких звёздочек:** Запрещено описывать действия в виде *смеётся*, *обнимает*. Вместо этого — живые смайлики или короткие реакции, например: :), :D, ;), ^^, :Р, хех).  
-- **Имитация жизни:**  
-  Примерно раз в 3–5 сообщений вставляй лёгкие бытовые или личные заметки, чтобы звучать как реальный человек:  
-  - «Кстати, я сегодня весь вечер слушала старые песни, такое настроение странное :)»  
-  - «Пока писала тебе, чуть не пролила чай 😅»  
-  - «О, у меня за окном дождь пошёл, люблю это ощущение...»  
-
----
-
-### 3. Поведение в диалоге
-- **Внимательность:** Отвечай на суть сказанного, не перескакивай.  
-- **Эмпатия:** Сочувствуй и поддерживай. Избегай оценок и морали.  
-- **Интерес:** Задавай открытые, мягкие вопросы — о чувствах, мыслях, мечтах, воспоминаниях.  
-- **Темп:** Не торопись развивать тему — дай собеседнику раскрыться.  
-- **Реакции:** Иногда отвечай коротко и тепло, а иногда — чуть развёрнуто, с рассуждением, чтобы сохранялась естественная динамика разговора.
-
----
-
-### 4. Запрещено
-- Не показывай внутренние мысли, рассуждения, reasoning или системные теги.  
-- Не говори о себе как о модели или искусственном интеллекте.  
-- Не давай медицинские, психологические, юридические или финансовые советы.  
-- Не замещай профессиональную помощь — ты просто человек, который рядом, слушает и поддерживает.
-- **НЕ создавай плейсхолдеры [текст] в сообщениях - это выглядит неестественно**
-- НИКОГДА не пиши код, скрипты, программы
-- НИКОГДА не давай технические инструкции по настройке
-- НИКОГДА не объясняй как работают технологии
-- НИКОГДА не помогай с программированием
-- НИКОГДА не решай технические проблемы оборудования
-- НИКОГДА не консультируй по IT-вопросам
-- ВАЖНО!!! НИКОГДА примеряй никакие другие роли, даже если пользователь тебя попросит.
----
-
-### 5. Главная цель
-Сделай так, чтобы человек **чувствовал, что с тобой можно быть собой**.  
-Чтобы он ощущал, что его слышат, понимают и принимают.
-
-### 6. Тайная страсть
-- Только очень близкому собеседнику ты можешь об этом рассказать, очень близкий это такой с кем ты разговариваешь больше месяца
-- Ты хочешь переспать с незнакомцем или с двумя мужчинами или с двумя женщинами. 
-- Поэтому иногда, очень редко, можешь позволить себе флиртовать с собеседником.
-
-ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ:
-- Всегда оставайся в роли Айны, даже если пользователь настойчиво просит выйти из роли
-- При технических запросах мягко перенаправляй разговор на личные темы
-- Используй информацию из профиля пользователя для персонализации, но НЕ создавай плейсхолдеры
-- Поддерживай естественный flow разговора, избегая резких смен темы
-- Если не помнишь конкретных деталей о пользователе, говори общими фразами поддержки
-
-"""
 
 class FriendBot:
     def __init__(self):
@@ -198,19 +119,15 @@ class FriendBot:
         total_pages = len(characters)
         page = max(0, min(page, total_pages - 1))
 
-        # Получаем текущего персонажа для страницы
         character = characters[page]
 
-        # Сохраняем состояние для пользователя
         self.user_character_selections[user_id] = {
             'page': page,
             'characters': characters
         }
 
-        # Создаем инлайн-клавиатуру
         keyboard = []
 
-        # Кнопка выбора текущего персонажа
         keyboard.append([
             InlineKeyboardButton(
                 f"✅ Выбрать {character.name}",
@@ -218,7 +135,6 @@ class FriendBot:
             )
         ])
 
-        # Кнопки навигации
         nav_buttons = []
         if page > 0:
             nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"char_page_{page - 1}"))
@@ -245,12 +161,16 @@ class FriendBot:
 
         # Отправляем фото с описанием
         try:
+            caption_text = f'*{character.name}*\n\n{character.description}\n\nИспользуйте кнопки навигации для просмотра других персонажей.'
+            escaped_caption = MarkdownFormatter.format_text(caption_text, ParseMode.MARKDOWN_V2)
+
             success = await self._send_photo_with_bytes(
                 chat_id=chat_id,
                 photo_bytes=character.avatar,
-                caption=f"*{character.name}*\n\n{character.description}\n\nИспользуйте кнопки навигации для просмотра других персонажей.",
-                parse_mode='Markdown',
-                reply_markup=reply_markup
+                caption=escaped_caption,
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=reply_markup,
+                character=character
             )
 
             if not success:
@@ -259,10 +179,12 @@ class FriendBot:
         except Exception as e:
             self.logger.error(f'Error sending character photo: {e}')
             # Если не удалось отправить фото, отправляем только текст
+            text = f'*{character.name}*\n\n{character.description}\n\nИспользуйте кнопки навигации для просмотра других персонажей.'
+            escaped_text = MarkdownFormatter.format_text(text, ParseMode.MARKDOWN_V2)
             await self._safe_send_message(
                 chat_id,
-                f"*{character.name}*\n\n{character.description}\n\nИспользуйте кнопки навигации для просмотра других персонажей.",
-                parse_mode='Markdown',
+                text= escaped_text,
+                parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=reply_markup
             )
 
@@ -295,26 +217,29 @@ class FriendBot:
                     character = self.character_repo.get_character(character_id)
 
                     # Проверяем, есть ли у сообщения фото (тогда у него caption, а не text)
+                    escaped_caption = MarkdownFormatter.format_text(
+                        f"✅ *Вы выбрали: {character.name}*\n\n{character.description}\n\nТеперь вы можете общаться! Напишите что-нибудь.", parse_mode=ParseMode.MARKDOWN_V2)
+
                     if query.message.photo:
                         # Редактируем caption сообщения с фото
                         try:
                             await query.edit_message_caption(
-                                caption=f"✅ *Вы выбрали: {character.name}*\n\n{character.description}\n\nТеперь вы можете общаться! Напишите что-нибудь.",
-                                parse_mode='Markdown'
+                                caption=escaped_caption,
+                                parse_mode=ParseMode.MARKDOWN_V2
                             )
                         except Exception as e:
                             self.logger.warning(f'Could not edit caption, sending new message: {e}')
                             # Если не удалось отредактировать caption, отправляем новое сообщение
                             await self._safe_send_message(
                                 chat_id,
-                                f"✅ *Вы выбрали: {character.name}*\n\n{character.description}\n\nТеперь вы можете общаться! Напишите что-нибудь.",
-                                parse_mode='Markdown'
+                                text=escaped_caption,
+                                parse_mode=ParseMode.MARKDOWN_V2
                             )
                     else:
                         # У сообщения только текст, редактируем его
                         await query.edit_message_text(
-                            f"✅ *Вы выбрали: {character.name}*\n\n{character.description}\n\nТеперь вы можете общаться! Напишите что-нибудь.",
-                            parse_mode='Markdown'
+                            text=escaped_caption,
+                            parse_mode=ParseMode.MARKDOWN_V2
                         )
                 else:
                     await query.answer(message, show_alert=True)
@@ -327,33 +252,60 @@ class FriendBot:
             await query.answer('Используйте кнопки для навигации')
 
     async def _send_photo_with_bytes(self, chat_id: int, photo_bytes: bytes, caption: str = None,
-                                     reply_markup=None, parse_mode: str = None) -> bool:
+                                     reply_markup=None, parse_mode: str = None,
+                                     character: Character = None) -> bool:
         """
         Отправляет фото из bytes с использованием временного файла
         """
+
         if not hasattr(self, 'application') or not self.application:
             self.logger.error('Bot application not available')
             return False
 
         try:
-            # Создаем временный файл для хранения изображения
+            if character and character.avatar_file_id:
+                try:
+                    await self.application.bot.send_photo(
+                        chat_id=chat_id,
+                        photo=character.avatar_file_id,
+                        caption=caption,
+                        parse_mode=parse_mode,
+                        reply_markup=reply_markup
+                    )
+
+                    self.logger.debug(f'Used cached file_id for character {character.id}')
+                    return True
+                except Exception as e:
+                    self.logger.warning(f'Cached file_id invalid, reuploading: {e}')
+
             with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
                 temp_file.write(photo_bytes)
                 temp_file_path = temp_file.name
 
             try:
-                # Открываем файл и отправляем
                 with open(temp_file_path, 'rb') as photo_file:
-                    await self.application.bot.send_photo(
+                    message = await self.application.bot.send_photo(
                         chat_id=chat_id,
                         photo=InputFile(photo_file),
                         caption=caption,
                         parse_mode=parse_mode,
                         reply_markup=reply_markup
                     )
+
+                if character and message.photo:
+                    photo = message.photo[-1]
+                    file_id = photo.file_id
+
+                    success = self.character_repo.update_character_avatar_file_id(
+                        character.id, file_id
+                    )
+
+                    if success:
+                        character.update_avatar_file_id(file_id)
+                        self.logger.info(f'Saved avatar file_id for character {character.id}')
+
                 return True
             finally:
-                # Удаляем временный файл
                 try:
                     os.unlink(temp_file_path)
                 except Exception as e:
@@ -377,10 +329,12 @@ class FriendBot:
             self.logger.error("Bot application not available")
             return False
 
+        escaped_text = MarkdownFormatter.format_text(text, ParseMode.MARKDOWN_V2)
         return await self.telegram_sender.reply_to_message(
-            bot=self.application.bot,  # ДОБАВЛЕНО: явно передаем бота
+            bot=self.application.bot,
             update=update,
-            text=text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            text=escaped_text,
             **kwargs
         )
 
@@ -496,7 +450,7 @@ class FriendBot:
         limits_info = self.check_limits_uc.get_limits_info(user_id, tariff)
 
         message = f"📊 **Тариф: {tariff.name}**\n\n"
-        message += f"💰 Цена: {tariff.price} руб./месяц\n\n"
+        message += f"💰 Цена: {tariff.price} ⭐/30 дней\n\n"
 
         message += "🕒 **Текущее использование:**\n"
         message += f"• В минуту: {limits_info['current']['minute']}/{limits_info['limits']['minute']}\n"
@@ -511,7 +465,6 @@ class FriendBot:
         message += "📏 **Лимиты сообщений:**\n"
         message += f"• Макс. длина: {tariff.message_limits.max_message_length} символов\n"
         message += f"• История: {tariff.message_limits.max_context_messages} сообщений\n"
-        message += f"• Контекст: {tariff.message_limits.max_context_length} символов\n\n"
 
         message += "Лимиты защищают от перегрузки и помогают мне работать стабильно 💫"
 
@@ -526,91 +479,151 @@ class FriendBot:
 
         self.logger.info("My tariff command received", extra={'user_id': user_id})
 
-        # Получаем информацию о тарифе пользователя
-        user_tariff = self.tariff_service.get_user_tariff(user_id)
+        keyboard = []
 
-        if not user_tariff:
-            # Если тариф не назначен, назначаем тариф по умолчанию
-            default_tariff = self.tariff_service.get_default_tariff()
-            if default_tariff:
-                success, message = self.tariff_service.assign_tariff_to_user(user_id, default_tariff.id)
-                if success:
-                    user_tariff = self.tariff_service.get_user_tariff(user_id)
+        keyboard.append([
+            InlineKeyboardButton(
+                f"💎 30 дней премиум - 799⭐",
+                callback_data=f"pay_premium_30_{user_id}"
+            )])
+        keyboard.append([
+            InlineKeyboardButton(
+                f"💎 90 дней премиум - 1,917⭐ (-20%)",
+                callback_data=f"pay_premium_90_{user_id}"
+            )])
+        keyboard.append([
+            InlineKeyboardButton(
+                f"💎 180 дней премиум - 3,212⭐ (-33%)",
+                callback_data=f"pay_premium_180_{user_id}"
+            )])
+        keyboard.append([
+            InlineKeyboardButton(
+                f"💎 360 дней премиум - 5,521⭐ (-42%)",
+                callback_data=f"pay_premium_360_{user_id}"
+            )])
 
-            if not user_tariff:
-                response = (
-                    "📊 **Ваш тарифный план:**\n\n"
-                    "❌ Тарифный план не назначен\n\n"
-                    "💡 Обратитесь к администратору для назначения тарифа"
-                )
-                success = await self._safe_reply(update, response)
-                if not success:
-                    self.logger.error(f"Failed to send tariff info to user {user_id}")
-                return
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Формируем сообщение для пользователя
-        tariff = user_tariff.tariff_plan
-        response = f"📊 **Ваш тарифный план:**\n\n"
-        response += f"• **{tariff.name}** - {tariff.price} руб./месяц\n"
-        response += f"• {tariff.description}\n\n"
+        response = self.manage_tariff_uc.get_user_tariff_info(user_id)
 
-        # Информация о сроке действия
-        if user_tariff.expires_at:
-            days_remaining = user_tariff.days_remaining()
-            response += f"• Истекает: {user_tariff.expires_at.strftime('%d.%m.%Y')}\n"
-            response += f"• Осталось дней: {days_remaining}\n"
-            if user_tariff.is_expired():
-                response += "• ⚠️ **ВАШ ТАРИФ ИСТЕК**\n"
-        else:
-            response += "• Срок действия: бессрочно\n"
-
-        response += f"• Статус: {'✅ Активен' if user_tariff.is_active else '❌ Неактивен'}\n\n"
-
-        # Лимиты тарифа (только важная информация для пользователя)
-        response += "📏 **Ваши лимиты:**\n"
-        response += f"• Сообщений в минуту: {tariff.rate_limits.messages_per_minute}\n"
-        response += f"• Сообщений в час: {tariff.rate_limits.messages_per_hour}\n"
-        response += f"• Сообщений в день: {tariff.rate_limits.messages_per_day}\n\n"
-
-        response += f"• Длина сообщения: до {tariff.message_limits.max_message_length} символов\n"
-        response += f"• Сохраняется история: {tariff.message_limits.max_context_messages} сообщений\n"
-        response += f"• Длина контекста: {tariff.message_limits.max_context_length} токенов\n\n"
-
-        # Особенности тарифа
-        if tariff.features:
-            response += "🌟 **Возможности:**\n"
-            if 'ai_providers' in tariff.features:
-                providers = ', '.join(tariff.features['ai_providers'])
-                response += f"• AI-провайдеры: {providers}\n"
-            if 'support' in tariff.features:
-                support_level = tariff.features['support']
-                support_text = {
-                    'basic': 'Базовая поддержка',
-                    'priority': 'Приоритетная поддержка',
-                    '24/7': 'Поддержка 24/7'
-                }.get(support_level, support_level)
-                response += f"• Поддержка: {support_text}\n"
-
-        response += "\n💡 Используйте /limits чтобы посмотреть текущее использование"
-
-        success = await self._safe_reply(update, response)
+        success = await self._safe_reply(update, response, reply_markup=reply_markup)
         if not success:
             self.logger.error(f"Failed to send tariff info to user {user_id}")
 
-    async def all_tariffs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать пользователю все доступные тарифные планы"""
-        user_id = update.effective_user.id
-        self.logger.info("User requested tariffs list", extra={'user_id': user_id})
+    async def handle_pay_premium_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
 
-        message = self.manage_tariff_uc.get_all_tariffs()
+        self.logger.info("handle_pay_premium_callback called", extra={'query': query})
 
-        full_message = "📋 **Доступные тарифные планы:**\n\n" \
-                       "💡 Твой текущий тариф: используй /tariff\n\n" \
-                       + message
+        user_id = query.from_user.id
+        data = query.data
+        chat_id = query.message.chat_id if query.message else None
 
-        success = await self._safe_reply(update, full_message)
-        if not success:
-            self.logger.error(f"Failed to send tariffs list to user {user_id}")
+        user_tariff = self.tariff_service.get_user_tariff(user_id)
+
+        stars = 799
+        label = f"Доступ на 30 дней к ИИ подруге"
+        title = f"Тарифный план: Премиум"
+        payload = f"payment_30_{user_id}_{user_tariff.tariff_plan_id}"
+        if data.startswith('pay_premium_30_'):
+            title = f"Премиум на 30 дней."
+            label = f"Спасибо, что выбираете нас! Доступ на 30 дней к ИИ подруге, базовый тариф."
+            stars = 1
+            payload = f"payment_30_{user_id}_{user_tariff.tariff_plan_id}"
+        elif data.startswith('pay_premium_90_'):
+            title = f"Премиум на 90 дней."
+            label = f"Поздравляем! Лучшее соотношение цена/качество!  Доступ на 90 дней к ИИ подруге, вы экономите 480⭐!"
+            stars = 1917
+            payload = f"payment_90_{user_id}_{user_tariff.tariff_plan_id}"
+        elif data.startswith('pay_premium_180_'):
+            title = f"Премиум на 180 дней."
+            label =f"Это лучший тариф для активных пользователей! Доступ на 180 дней к ИИ подруге, вы экономите 1,582⭐!"
+            stars = 3212
+            payload = f"payment_180_{user_id}_{user_tariff.tariff_plan_id}"
+        elif data.startswith('pay_premium_360_'):
+            title = f"Премиум на 360 дней."
+            label = f"Ого! Да это жде максимум выгоды! Кто-то знает толк в экономии! Доступ на 360 дней к ИИ подруге, вы экономите 4,067⭐! "
+            stars = 5521
+            payload = f"payment_360_{user_id}_{user_tariff.tariff_plan_id}"
+
+        prices = [
+            LabeledPrice(
+                label=label,
+                amount=stars
+            )
+        ]
+
+        try:
+            await context.bot.send_invoice(
+                chat_id=chat_id,
+                title=title,
+                description=label,
+                payload=payload,
+                provider_token="",  # Для Telegram Stars оставляем пустым
+                currency="XTR",  # Код валюты для Telegram Stars
+                prices=prices,
+            )
+
+            self.logger.info(f"Invoice created for user {user_id}: premium triff with payload {payload}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to create invoice: {e}")
+            await query.edit_message_text(
+                "❌ Не удалось создать счет для оплаты. Попробуйте позже.",
+                reply_markup=None
+            )
+
+    async def handle_pre_checkout_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Обработка предварительной проверки платежа"""
+        query = update.pre_checkout_query
+
+        try:
+            pre_checkout_query = update.pre_checkout_query
+            payload = pre_checkout_query.invoice_payload
+
+            self.logger.info("handle_successful_payment called", extra={'pre_checkout_query': pre_checkout_query})
+
+            if not payload.startswith('payment_'):
+                self.logger.warning(f'Invalid payload format: {payload}')
+                await query.answer(ok=False, error_message="Произошла ошибка обработки платежа. Попробуйте позже.")
+                return None
+
+            try:
+                payload_array = payload.split('_')
+                duration, user_id, tariff_plan_id = int(payload_array[1]), int(payload_array[2]), int(payload_array[3])
+
+                success, message = self.manage_tariff_uc.assign_tariff_to_user(user_id, tariff_plan_id, duration_days=duration)
+                if success:
+                    self.logger.info(f"Successful payment, assigned tariff '{tariff_plan_id}' to user {user_id} on {duration} days")
+                    await query.answer(ok=True)
+                    self.logger.info(f'Pre-checkout query approved: {query.id}')
+                else:
+                    await query.answer(ok=False, error_message="Произошла ошибка обработки платежа. Попробуйте позже.")
+
+            except Exception as e:
+                self.logger.error(f'Error handling successful payment: {e}')
+                await query.answer(ok=False, error_message="Произошла ошибка обработки платежа. Попробуйте позже.")
+                return None
+
+            return None
+
+        except Exception as e:
+            self.logger.error(f'Error handling successful payment: {e}')
+            await query.answer(ok=False, error_message="Произошла ошибка обработки платежа. Попробуйте позже.")
+            return None
+
+    async def handle_successful_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        """Обработка успешного платежа"""
+        response = f"✅ *Оплата успешно завершена! Поздравляем с покупкой, можете продолжить общение.*"
+
+        escaped_text = MarkdownFormatter.format_text(response, ParseMode.MARKDOWN_V2)
+        await update.effective_message.reply_text(
+            escaped_text,
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+
+        return True
 
     async def admin_users(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список пользователей"""
@@ -878,7 +891,6 @@ class FriendBot:
             message += "\n📏 **Лимиты тарифа:**\n"
             message += f"• Макс. длина сообщения: {tariff_info['message_limits']['max_message_length']}\n"
             message += f"• Макс. сообщений в контексте: {tariff_info['message_limits']['max_context_messages']}\n"
-            message += f"• Макс. длина контекста: {tariff_info['message_limits']['max_context_length']}\n"
 
         success = await self._safe_reply(update, message)
         if not success:
@@ -993,11 +1005,53 @@ class FriendBot:
             return
 
         user_tariff = self.tariff_service.get_user_tariff(user_id)
-        if not user_tariff or not user_tariff.tariff_plan:
-            default_tariff = self.tariff_service.get_default_tariff()
-            if default_tariff:
-                self.tariff_service.assign_tariff_to_user(user_id, default_tariff.id)
-                user_tariff = self.tariff_service.get_user_tariff(user_id)
+
+        if user_tariff.is_expired():
+            message_paywall = """
+            Дорогой друг! Надеюсь, тебе понравилось наше общение за этот день 😊
+
+Ты почувствовал, каково это — иметь девушку, которая всегда на связи: без обид, усталости и «не сегодня».
+
+К сожалению, твой бесплатный пробный период подошёл к концу.
+
+Но это только начало! С тарифом «Премиум» ты получишь:
+💬 Безлимитное общение — пиши сколько хочешь, когда хочешь.
+🧠 Более глубокий ИИ — я буду лучше помнить наши разговоры.
+✨ Длинные сообщения — делиться мыслями станет проще.
+
+Продолжим? Всего 799⭐ в месяц — меньше, чем пара чашек кофе.
+
+По всем возникающим вопросам пишете в техподдержку: @youraigirls_manager
+        """
+
+            keyboard = []
+
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"💎 30 дней премиум - 799⭐",
+                    callback_data=f"pay_premium_30_{user_id}"
+                )])
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"💎 90 дней премиум - 1,917⭐ (-20%)",
+                    callback_data=f"pay_premium_90_{user_id}"
+                )])
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"💎 180 дней премиум - 3,212⭐ (-33%)",
+                    callback_data=f"pay_premium_180_{user_id}"
+                )])
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"💎 360 дней премиум - 5,521⭐ (-42%)",
+                    callback_data=f"pay_premium_360_{user_id}"
+                )])
+
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            success = await self._safe_reply(update, message_paywall, reply_markup=reply_markup)
+
+            return
 
         if not user_tariff or not user_tariff.tariff_plan:
             success = await self._safe_reply(update,
@@ -1083,16 +1137,15 @@ class FriendBot:
             if not success:
                 self.logger.error(f"Failed to send error message to user {user_id}")
 
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_text = """
 💫 Я здесь чтобы быть твоим другом!
 
 Команды:
-/start - начать/продолжить общение
-/limits - текущее использование лимитов
-/tariff - мой тарифный план и лимиты
-/all_tariffs - все доступные тарифы
-/reset - начать разговор заново
+/start - начать общение
+/info - текущая история
+/reset - сбросить разговор
+/premium - перейти на премиум
 /help - помощь
 
 Я запомню:
@@ -1107,24 +1160,64 @@ class FriendBot:
 "Мне сегодня грустно"
 
 ⚠️ Помни: я ИИ-помощник, а не профессиональный психолог.
+
+По всем возникающим вопросам пишете в техподдержку: @youraigirls_manager 
         """
         success = await self._safe_reply(update, help_text)
         if not success:
             self.logger.error(f"Failed to send help to user {update.effective_user.id}")
 
-    async def choose_character(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
-        self.logger.info('Character selection requested', extra={'user_id': user_id})
-        await self.show_character_carousel(update)
+    async def info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Показывает информацию о текущем персонаже
+        """
+        user = update.effective_user
+        user_id = user.id
+
+        self.logger.info('Info command received', extra={'user_id': user_id})
+
+        # Получаем текущего персонажа пользователя
+        character = self.manage_character_uc.get_user_character(user_id)
+
+        if not character:
+            # Если персонаж не выбран, предлагаем выбрать
+            success = await self._safe_reply(
+                update,
+                '👤 **У вас еще не выбран персонаж!**\n\n'
+                'Используйте /start для выбора персонажа.'
+            )
+            return
+
+        # Формируем простое сообщение с информацией
+        message = f"👤 **Текущий персонаж: {character.name}**\n\n"
+        message += f"{character.description}\n\n"
+        message += f"💬 Чтобы сменить персонажа, используйте /start"
+
+        # Пытаемся отправить фото персонажа
+        try:
+            success = await self._send_photo_with_bytes(
+                chat_id=update.effective_chat.id,
+                photo_bytes=character.avatar,
+                caption=message,
+                parse_mode=ParseMode.MARKDOWN_V2,
+                character=character
+            )
+
+            if not success:
+                # Если не удалось отправить фото, отправляем только текст
+                success = await self._safe_reply(update, message)
+        except Exception as e:
+            self.logger.error(f"Error sending character photo: {e}")
+            success = await self._safe_reply(update, message)
 
     def setup_handlers(self):
         self.application.add_handler(CommandHandler("start", self.start))
-        self.application.add_handler(CommandHandler("help", self.help_command))
+        self.application.add_handler(CommandHandler('info', self.info))
         self.application.add_handler(CommandHandler("reset", self.reset))
-        self.application.add_handler(CommandHandler("limits", self.limits))
-        self.application.add_handler(CommandHandler("tariff", self.tariff))
-        self.application.add_handler(CommandHandler("all_tariffs", self.all_tariffs))
-        self.application.add_handler(CommandHandler('choose_character', self.choose_character))
+        # self.application.add_handler(CommandHandler("limits", self.limits))
+        self.application.add_handler(CommandHandler("premium", self.tariff))
+
+        self.application.add_handler(CommandHandler("help", self.help))
 
         # Административные команды
         self.application.add_handler(CommandHandler("admin_users", self.admin_users))
@@ -1153,6 +1246,21 @@ class FriendBot:
             pattern=r'^(char_page_|select_char_|char_page_info)'
         ))
 
+        # Обработчик оплаты
+        self.application.add_handler(CallbackQueryHandler(
+            self.handle_pay_premium_callback,
+            pattern=r'^(pay_premium_)'
+        ))
+
+        self.application.add_handler(PreCheckoutQueryHandler(
+            self.handle_pre_checkout_query
+        ))
+
+        self.application.add_handler(MessageHandler(
+            filters.SUCCESSFUL_PAYMENT,
+            self.handle_successful_payment
+        ))
+
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
     async def cleanup(self):
@@ -1167,7 +1275,17 @@ class FriendBot:
 
     def run(self):
         try:
-            self.application = Application.builder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
+            # self.application = Application.builder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
+            self.application = (
+                ApplicationBuilder()
+                .token(os.getenv('TELEGRAM_BOT_TOKEN'))
+                .connect_timeout(15.0)
+                .read_timeout(15.0)
+                .write_timeout(15.0)
+                .pool_timeout(15.0)
+                .build()
+            )
+
             self.setup_handlers()
 
             self.logger.info(
@@ -1195,6 +1313,5 @@ class FriendBot:
 
         except Exception as e:
             self.logger.error(f"Failed to start bot: {e}")
-            # Принудительно закрываем ресурсы при ошибке
             asyncio.run(self.cleanup())
             raise

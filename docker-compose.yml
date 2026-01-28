@@ -12,7 +12,6 @@ services:
       - "5433:5432"
     volumes:
       - ./postgres/data:/var/lib/postgresql/data  # ← Храним на хосте!
-      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
       - ./postgres/backups:/backups  # ← Папка для бэкапов
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
@@ -29,32 +28,18 @@ services:
       # Database
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_NAME=${DB_NAME:-friend_bot}
+      - DB_NAME=${DB_NAME:-ai-friend}
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD:-postgres}
 
       # Telegram
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 
-      # AI Provider
-      - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama2:7b}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - HF_API_KEY=${HF_API_KEY}
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
-
       # Monitoring
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - ENABLE_METRICS=true
       - METRICS_PORT=8000
       - ENABLE_TRACING=${ENABLE_TRACING:-false}
-
-      # Rate Limits
-      - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-2}
-      - RATE_LIMIT_PER_HOUR=${RATE_LIMIT_PER_HOUR:-15}
-      - RATE_LIMIT_PER_DAY=${RATE_LIMIT_PER_DAY:-30}
 
       # Admin
       - DEFAULT_ADMIN_IDS=${DEFAULT_ADMIN_IDS}
