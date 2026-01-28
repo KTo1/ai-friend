@@ -52,7 +52,7 @@ class ManageTariffUseCase:
             message += f"• Осталось дней: {days_remaining}\n\n"
 
         message += f"📝 {tariff.description}\n"
-        message += f"💰 Цена: {tariff.price} ⭐/30 дней\n"
+        message += f"По всем возникающим вопросам пишете в техподдержку: @youraigirls_manager"
 
         return message
 

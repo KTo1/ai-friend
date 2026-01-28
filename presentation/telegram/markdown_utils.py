@@ -11,104 +11,104 @@ class MarkdownFormatter:
     """Форматирование текста для MarkdownV2 в Telegram."""
 
     # Специальные символы, которые нужно экранировать в MarkdownV2
+    # Включая восклицательный знак (!)
     MD_V2_SPECIAL_CHARS = r'_*[]()~`>#+-=|{}.!'
+
+    # Шаблоны для поиска разметки MarkdownV2
+    BOLD_PATTERN = r'\*(?!\s)(.+?)(?<!\s)\*'
+    ITALIC_PATTERN = r'_(?!\s)(.+?)(?<!\s)_'
+    CODE_PATTERN = r'`(?!\s)(.+?)(?<!\s)`'
 
     @staticmethod
     def format_text(text: str, parse_mode: Optional[str] = None) -> str:
         """
         Форматирует текст в соответствии с указанным parse_mode.
-
-        ВАЖНО: Для MarkdownV2 не экранируем звездочки внутри разметки.
+        Умное экранирование: сохраняет разметку, экранирует содержимое внутри нее.
         """
         if not text:
             return text
 
         if parse_mode == ParseMode.MARKDOWN_V2:
-            # Разбиваем текст на части: разметка и обычный текст
             return MarkdownFormatter._format_markdown_v2_smart(text)
         elif parse_mode == ParseMode.HTML:
-            # Экранируем HTML-сущности
             return MarkdownFormatter._escape_html(text)
         else:
-            # Без форматирования
             return text
 
     @staticmethod
     def _format_markdown_v2_smart(text: str) -> str:
         """
         Умное форматирование MarkdownV2:
-        - Сохраняет существующую разметку (*жирный*, _курсив_ и т.д.)
-        - Экранирует только неразмеченный текст
+        1. Находит все элементы разметки
+        2. Экранирует содержимое внутри разметки
+        3. Собирает обратно
         """
-        # Регулярное выражение для поиска разметки MarkdownV2
-        # Ищем *жирный*, _курсив_, `код`, ```блок кода```
-        patterns = [
-            (r'\*\*(.*?)\*\*', r'*\1*'),  # **жирный** -> *жирный* (поддержка старого синтаксиса)
-            (r'__(.*?)__', r'_\1_'),      # __курсив__ -> _курсив_ (поддержка старого синтаксиса)
-        ]
+        # Находим все элементы разметки с их позициями
+        elements = []
 
-        # Сначала конвертируем старый синтаксис в новый
-        for pattern, replacement in patterns:
-            text = re.sub(pattern, replacement, text, flags=re.DOTALL)
+        # Ищем жирный текст
+        for match in re.finditer(MarkdownFormatter.BOLD_PATTERN, text, re.DOTALL):
+            start, end = match.span()
+            content = match.group(1)
+            # Экранируем содержимое
+            escaped_content = MarkdownFormatter._escape_all_special_chars(content)
+            elements.append(('bold', start, end, escaped_content))
 
-        # Теперь обрабатываем разметку MarkdownV2
-        # Разбиваем текст на части: разметка и обычный текст
-        parts = []
-        i = 0
-        n = len(text)
+        # Ищем курсив
+        for match in re.finditer(MarkdownFormatter.ITALIC_PATTERN, text, re.DOTALL):
+            start, end = match.span()
+            content = match.group(1)
+            escaped_content = MarkdownFormatter._escape_all_special_chars(content)
+            elements.append(('italic', start, end, escaped_content))
 
-        while i < n:
-            # Ищем начало разметки
-            if text[i] == '*' and i + 1 < n and text[i+1] != ' ':
-                # Нашли жирный текст
-                j = i + 1
-                while j < n and text[j] != '*':
-                    j += 1
-                if j < n:  # Нашли закрывающую звездочку
-                    # Это разметка, не экранируем
-                    parts.append(text[i:j+1])
-                    i = j + 1
-                    continue
-            elif text[i] == '_' and i + 1 < n and text[i+1] != ' ':
-                # Нашли курсив
-                j = i + 1
-                while j < n and text[j] != '_':
-                    j += 1
-                if j < n:  # Нашли закрывающее подчеркивание
-                    # Это разметка, не экранируем
-                    parts.append(text[i:j+1])
-                    i = j + 1
-                    continue
-            elif text[i] == '`':
-                # Нашли код
-                j = i + 1
-                while j < n and text[j] != '`':
-                    j += 1
-                if j < n:  # Нашли закрывающий обратный апостроф
-                    # Это разметка, не экранируем
-                    parts.append(text[i:j+1])
-                    i = j + 1
-                    continue
+        # Ищем код
+        for match in re.finditer(MarkdownFormatter.CODE_PATTERN, text, re.DOTALL):
+            start, end = match.span()
+            content = match.group(1)
+            escaped_content = MarkdownFormatter._escape_all_special_chars(content)
+            elements.append(('code', start, end, escaped_content))
 
-            # Это обычный текст, экранируем
-            start = i
-            while i < n and text[i] not in '*_`':
-                i += 1
-            if start < i:
-                plain_text = text[start:i]
-                escaped_text = MarkdownFormatter._escape_markdown_v2_plain(plain_text)
-                parts.append(escaped_text)
+        # Если нет разметки, просто экранируем весь текст
+        if not elements:
+            return MarkdownFormatter._escape_all_special_chars(text)
 
-        return ''.join(parts)
+        # Сортируем элементы по позиции
+        elements.sort(key=lambda x: x[1])
+
+        # Собираем результат
+        result = []
+        last_pos = 0
+
+        for elem_type, start, end, content in elements:
+            # Добавляем текст перед элементом (экранированный)
+            if start > last_pos:
+                plain_text = text[last_pos:start]
+                escaped_plain = MarkdownFormatter._escape_all_special_chars(plain_text)
+                result.append(escaped_plain)
+
+            # Добавляем элемент с экранированным содержимым
+            if elem_type == 'bold':
+                result.append(f'*{content}*')
+            elif elem_type == 'italic':
+                result.append(f'_{content}_')
+            elif elem_type == 'code':
+                result.append(f'`{content}`')
+
+            last_pos = end
+
+        # Добавляем оставшийся текст после последнего элемента
+        if last_pos < len(text):
+            plain_text = text[last_pos:]
+            escaped_plain = MarkdownFormatter._escape_all_special_chars(plain_text)
+            result.append(escaped_plain)
+
+        return ''.join(result)
 
     @staticmethod
-    def _escape_markdown_v2_plain(text: str) -> str:
-        """Экранирует только обычный текст (без разметки)."""
-        # Экранируем специальные символы, но не трогаем те, что внутри разметки
+    def _escape_all_special_chars(text: str) -> str:
+        """Экранирует все специальные символы MarkdownV2."""
         for char in MarkdownFormatter.MD_V2_SPECIAL_CHARS:
-            # Не экранируем символы, которые могут быть частью разметки
-            if char in '*_`':
-                continue
+            # Экранируем каждый специальный символ
             text = text.replace(char, f'\\{char}')
         return text
 
@@ -119,35 +119,54 @@ class MarkdownFormatter:
         text = text.replace('<', '&lt;')
         text = text.replace('>', '&gt;')
         text = text.replace('"', '&quot;')
+        text = text.replace("'", '&#39;')
         return text
 
     @staticmethod
     def format_bold(text: str) -> str:
         """Форматирует текст как жирный для MarkdownV2."""
-        escaped = MarkdownFormatter._escape_markdown_v2_plain(text)
+        escaped = MarkdownFormatter._escape_all_special_chars(text)
         return f'*{escaped}*'
 
     @staticmethod
     def format_italic(text: str) -> str:
         """Форматирует текст как курсив для MarkdownV2."""
-        escaped = MarkdownFormatter._escape_markdown_v2_plain(text)
+        escaped = MarkdownFormatter._escape_all_special_chars(text)
         return f'_{escaped}_'
 
     @staticmethod
     def format_code(text: str) -> str:
         """Форматирует текст как инлайн-код для MarkdownV2."""
-        escaped = MarkdownFormatter._escape_markdown_v2_plain(text)
+        escaped = MarkdownFormatter._escape_all_special_chars(text)
         return f'`{escaped}`'
 
     @staticmethod
     def format_pre(code: str, language: str = '') -> str:
         """Форматирует текст как блок кода для MarkdownV2."""
-        escaped = MarkdownFormatter._escape_markdown_v2_plain(code)
+        escaped = MarkdownFormatter._escape_all_special_chars(code)
         return f'```{language}\n{escaped}\n```'
 
     @staticmethod
     def format_link(text: str, url: str) -> str:
         """Форматирует ссылку для MarkdownV2."""
-        escaped_text = MarkdownFormatter._escape_markdown_v2_plain(text)
-        escaped_url = MarkdownFormatter._escape_markdown_v2_plain(url)
+        escaped_text = MarkdownFormatter._escape_all_special_chars(text)
+        escaped_url = MarkdownFormatter._escape_all_special_chars(url)
         return f'[{escaped_text}]({escaped_url})'
+
+    @staticmethod
+    def test_formatting() -> List[Tuple[str, str]]:
+        """Тестовая функция для проверки форматирования."""
+        test_cases = [
+            ("*Добро пожаловать!*", "Должен сохранить жирный текст"),
+            ("_Курсивный текст!_", "Должен сохранить курсив"),
+            ("`код с ! внутри`", "Должен сохранить код"),
+            ("Простой текст с !", "Должен экранировать !"),
+            ("Текст со *жирным* и _курсивом_", "Должен сохранить оба типа разметки"),
+        ]
+
+        results = []
+        for text, description in test_cases:
+            formatted = MarkdownFormatter.format_text(text, ParseMode.MARKDOWN_V2)
+            results.append((text, formatted, description))
+
+        return results

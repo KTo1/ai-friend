@@ -2,8 +2,9 @@ import os
 import asyncio
 
 import tempfile
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, LabeledPrice
+from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, ApplicationBuilder, PreCheckoutQueryHandler
 from telegram.constants import ParseMode
 
 from presentation.telegram.markdown_utils import MarkdownFormatter
@@ -118,19 +119,15 @@ class FriendBot:
         total_pages = len(characters)
         page = max(0, min(page, total_pages - 1))
 
-        # Получаем текущего персонажа для страницы
         character = characters[page]
 
-        # Сохраняем состояние для пользователя
         self.user_character_selections[user_id] = {
             'page': page,
             'characters': characters
         }
 
-        # Создаем инлайн-клавиатуру
         keyboard = []
 
-        # Кнопка выбора текущего персонажа
         keyboard.append([
             InlineKeyboardButton(
                 f"✅ Выбрать {character.name}",
@@ -138,7 +135,6 @@ class FriendBot:
             )
         ])
 
-        # Кнопки навигации
         nav_buttons = []
         if page > 0:
             nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"char_page_{page - 1}"))
@@ -221,26 +217,29 @@ class FriendBot:
                     character = self.character_repo.get_character(character_id)
 
                     # Проверяем, есть ли у сообщения фото (тогда у него caption, а не text)
+                    escaped_caption = MarkdownFormatter.format_text(
+                        f"✅ *Вы выбрали: {character.name}*\n\n{character.description}\n\nТеперь вы можете общаться! Напишите что-нибудь.", parse_mode=ParseMode.MARKDOWN_V2)
+
                     if query.message.photo:
                         # Редактируем caption сообщения с фото
                         try:
                             await query.edit_message_caption(
-                                caption=f"✅ *Вы выбрали: {character.name}*\n\n{character.description}\n\nТеперь вы можете общаться! Напишите что-нибудь.",
-                                parse_mode='MarkdownV2'
+                                caption=escaped_caption,
+                                parse_mode=ParseMode.MARKDOWN_V2
                             )
                         except Exception as e:
                             self.logger.warning(f'Could not edit caption, sending new message: {e}')
                             # Если не удалось отредактировать caption, отправляем новое сообщение
                             await self._safe_send_message(
                                 chat_id,
-                                f"✅ *Вы выбрали: {character.name}*\n\n{character.description}\n\nТеперь вы можете общаться! Напишите что-нибудь.",
-                                parse_mode='MarkdownV2'
+                                text=escaped_caption,
+                                parse_mode=ParseMode.MARKDOWN_V2
                             )
                     else:
                         # У сообщения только текст, редактируем его
                         await query.edit_message_text(
-                            f"✅ *Вы выбрали: {character.name}*\n\n{character.description}\n\nТеперь вы можете общаться! Напишите что-нибудь.",
-                            parse_mode='MarkdownV2'
+                            text=escaped_caption,
+                            parse_mode=ParseMode.MARKDOWN_V2
                         )
                 else:
                     await query.answer(message, show_alert=True)
@@ -480,11 +479,151 @@ class FriendBot:
 
         self.logger.info("My tariff command received", extra={'user_id': user_id})
 
+        keyboard = []
+
+        keyboard.append([
+            InlineKeyboardButton(
+                f"💎 30 дней премиум - 799⭐",
+                callback_data=f"pay_premium_30_{user_id}"
+            )])
+        keyboard.append([
+            InlineKeyboardButton(
+                f"💎 90 дней премиум - 1,917⭐ (-20%)",
+                callback_data=f"pay_premium_90_{user_id}"
+            )])
+        keyboard.append([
+            InlineKeyboardButton(
+                f"💎 180 дней премиум - 3,212⭐ (-33%)",
+                callback_data=f"pay_premium_180_{user_id}"
+            )])
+        keyboard.append([
+            InlineKeyboardButton(
+                f"💎 360 дней премиум - 5,521⭐ (-42%)",
+                callback_data=f"pay_premium_360_{user_id}"
+            )])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
         response = self.manage_tariff_uc.get_user_tariff_info(user_id)
 
-        success = await self._safe_reply(update, response)
+        success = await self._safe_reply(update, response, reply_markup=reply_markup)
         if not success:
             self.logger.error(f"Failed to send tariff info to user {user_id}")
+
+    async def handle_pay_premium_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+
+        self.logger.info("handle_pay_premium_callback called", extra={'query': query})
+
+        user_id = query.from_user.id
+        data = query.data
+        chat_id = query.message.chat_id if query.message else None
+
+        user_tariff = self.tariff_service.get_user_tariff(user_id)
+
+        stars = 799
+        label = f"Доступ на 30 дней к ИИ подруге"
+        title = f"Тарифный план: Премиум"
+        payload = f"payment_30_{user_id}_{user_tariff.tariff_plan_id}"
+        if data.startswith('pay_premium_30_'):
+            title = f"Премиум на 30 дней."
+            label = f"Спасибо, что выбираете нас! Доступ на 30 дней к ИИ подруге, базовый тариф."
+            stars = 1
+            payload = f"payment_30_{user_id}_{user_tariff.tariff_plan_id}"
+        elif data.startswith('pay_premium_90_'):
+            title = f"Премиум на 90 дней."
+            label = f"Поздравляем! Лучшее соотношение цена/качество!  Доступ на 90 дней к ИИ подруге, вы экономите 480⭐!"
+            stars = 1917
+            payload = f"payment_90_{user_id}_{user_tariff.tariff_plan_id}"
+        elif data.startswith('pay_premium_180_'):
+            title = f"Премиум на 180 дней."
+            label =f"Это лучший тариф для активных пользователей! Доступ на 180 дней к ИИ подруге, вы экономите 1,582⭐!"
+            stars = 3212
+            payload = f"payment_180_{user_id}_{user_tariff.tariff_plan_id}"
+        elif data.startswith('pay_premium_360_'):
+            title = f"Премиум на 360 дней."
+            label = f"Ого! Да это жде максимум выгоды! Кто-то знает толк в экономии! Доступ на 360 дней к ИИ подруге, вы экономите 4,067⭐! "
+            stars = 5521
+            payload = f"payment_360_{user_id}_{user_tariff.tariff_plan_id}"
+
+        prices = [
+            LabeledPrice(
+                label=label,
+                amount=stars
+            )
+        ]
+
+        try:
+            await context.bot.send_invoice(
+                chat_id=chat_id,
+                title=title,
+                description=label,
+                payload=payload,
+                provider_token="",  # Для Telegram Stars оставляем пустым
+                currency="XTR",  # Код валюты для Telegram Stars
+                prices=prices,
+            )
+
+            self.logger.info(f"Invoice created for user {user_id}: premium triff with payload {payload}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to create invoice: {e}")
+            await query.edit_message_text(
+                "❌ Не удалось создать счет для оплаты. Попробуйте позже.",
+                reply_markup=None
+            )
+
+    async def handle_pre_checkout_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Обработка предварительной проверки платежа"""
+        query = update.pre_checkout_query
+
+        try:
+            pre_checkout_query = update.pre_checkout_query
+            payload = pre_checkout_query.invoice_payload
+
+            self.logger.info("handle_successful_payment called", extra={'pre_checkout_query': pre_checkout_query})
+
+            if not payload.startswith('payment_'):
+                self.logger.warning(f'Invalid payload format: {payload}')
+                await query.answer(ok=False, error_message="Произошла ошибка обработки платежа. Попробуйте позже.")
+                return None
+
+            try:
+                payload_array = payload.split('_')
+                duration, user_id, tariff_plan_id = int(payload_array[1]), int(payload_array[2]), int(payload_array[3])
+
+                success, message = self.manage_tariff_uc.assign_tariff_to_user(user_id, tariff_plan_id, duration_days=duration)
+                if success:
+                    self.logger.info(f"Successful payment, assigned tariff '{tariff_plan_id}' to user {user_id} on {duration} days")
+                    await query.answer(ok=True)
+                    self.logger.info(f'Pre-checkout query approved: {query.id}')
+                else:
+                    await query.answer(ok=False, error_message="Произошла ошибка обработки платежа. Попробуйте позже.")
+
+            except Exception as e:
+                self.logger.error(f'Error handling successful payment: {e}')
+                await query.answer(ok=False, error_message="Произошла ошибка обработки платежа. Попробуйте позже.")
+                return None
+
+            return None
+
+        except Exception as e:
+            self.logger.error(f'Error handling successful payment: {e}')
+            await query.answer(ok=False, error_message="Произошла ошибка обработки платежа. Попробуйте позже.")
+            return None
+
+    async def handle_successful_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        """Обработка успешного платежа"""
+        response = f"✅ *Оплата успешно завершена! Поздравляем с покупкой, можете продолжить общение.*"
+
+        escaped_text = MarkdownFormatter.format_text(response, ParseMode.MARKDOWN_V2)
+        await update.effective_message.reply_text(
+            escaped_text,
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+
+        return True
 
     async def admin_users(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список пользователей"""
@@ -882,10 +1021,35 @@ class FriendBot:
 
 Продолжим? Всего 799⭐ в месяц — меньше, чем пара чашек кофе.
 
-[ КНОПКА: 🔓 Продолжить общение за 799⭐/30 дней ]
-"""
+По всем возникающим вопросам пишете в техподдержку: @youraigirls_manager
+        """
 
-            success = await self._safe_reply(update, message_paywall)
+            keyboard = []
+
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"💎 30 дней премиум - 799⭐",
+                    callback_data=f"pay_premium_30_{user_id}"
+                )])
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"💎 90 дней премиум - 1,917⭐ (-20%)",
+                    callback_data=f"pay_premium_90_{user_id}"
+                )])
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"💎 180 дней премиум - 3,212⭐ (-33%)",
+                    callback_data=f"pay_premium_180_{user_id}"
+                )])
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"💎 360 дней премиум - 5,521⭐ (-42%)",
+                    callback_data=f"pay_premium_360_{user_id}"
+                )])
+
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            success = await self._safe_reply(update, message_paywall, reply_markup=reply_markup)
 
             return
 
@@ -973,7 +1137,7 @@ class FriendBot:
             if not success:
                 self.logger.error(f"Failed to send error message to user {user_id}")
 
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_text = """
 💫 Я здесь чтобы быть твоим другом!
 
@@ -996,19 +1160,64 @@ class FriendBot:
 "Мне сегодня грустно"
 
 ⚠️ Помни: я ИИ-помощник, а не профессиональный психолог.
+
+По всем возникающим вопросам пишете в техподдержку: @youraigirls_manager 
         """
         success = await self._safe_reply(update, help_text)
         if not success:
             self.logger.error(f"Failed to send help to user {update.effective_user.id}")
 
+    async def info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Показывает информацию о текущем персонаже
+        """
+        user = update.effective_user
+        user_id = user.id
+
+        self.logger.info('Info command received', extra={'user_id': user_id})
+
+        # Получаем текущего персонажа пользователя
+        character = self.manage_character_uc.get_user_character(user_id)
+
+        if not character:
+            # Если персонаж не выбран, предлагаем выбрать
+            success = await self._safe_reply(
+                update,
+                '👤 **У вас еще не выбран персонаж!**\n\n'
+                'Используйте /start для выбора персонажа.'
+            )
+            return
+
+        # Формируем простое сообщение с информацией
+        message = f"👤 **Текущий персонаж: {character.name}**\n\n"
+        message += f"{character.description}\n\n"
+        message += f"💬 Чтобы сменить персонажа, используйте /start"
+
+        # Пытаемся отправить фото персонажа
+        try:
+            success = await self._send_photo_with_bytes(
+                chat_id=update.effective_chat.id,
+                photo_bytes=character.avatar,
+                caption=message,
+                parse_mode=ParseMode.MARKDOWN_V2,
+                character=character
+            )
+
+            if not success:
+                # Если не удалось отправить фото, отправляем только текст
+                success = await self._safe_reply(update, message)
+        except Exception as e:
+            self.logger.error(f"Error sending character photo: {e}")
+            success = await self._safe_reply(update, message)
+
     def setup_handlers(self):
         self.application.add_handler(CommandHandler("start", self.start))
-        self.application.add_handler(CommandHandler("info", self.start))
+        self.application.add_handler(CommandHandler('info', self.info))
         self.application.add_handler(CommandHandler("reset", self.reset))
-        self.application.add_handler(CommandHandler("limits", self.limits))
-        self.application.add_handler(CommandHandler("tariff", self.tariff))
+        # self.application.add_handler(CommandHandler("limits", self.limits))
+        self.application.add_handler(CommandHandler("premium", self.tariff))
 
-        self.application.add_handler(CommandHandler("help", self.help_command))
+        self.application.add_handler(CommandHandler("help", self.help))
 
         # Административные команды
         self.application.add_handler(CommandHandler("admin_users", self.admin_users))
@@ -1037,6 +1246,21 @@ class FriendBot:
             pattern=r'^(char_page_|select_char_|char_page_info)'
         ))
 
+        # Обработчик оплаты
+        self.application.add_handler(CallbackQueryHandler(
+            self.handle_pay_premium_callback,
+            pattern=r'^(pay_premium_)'
+        ))
+
+        self.application.add_handler(PreCheckoutQueryHandler(
+            self.handle_pre_checkout_query
+        ))
+
+        self.application.add_handler(MessageHandler(
+            filters.SUCCESSFUL_PAYMENT,
+            self.handle_successful_payment
+        ))
+
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
     async def cleanup(self):
@@ -1051,7 +1275,17 @@ class FriendBot:
 
     def run(self):
         try:
-            self.application = Application.builder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
+            # self.application = Application.builder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
+            self.application = (
+                ApplicationBuilder()
+                .token(os.getenv('TELEGRAM_BOT_TOKEN'))
+                .connect_timeout(15.0)
+                .read_timeout(15.0)
+                .write_timeout(15.0)
+                .pool_timeout(15.0)
+                .build()
+            )
+
             self.setup_handlers()
 
             self.logger.info(
@@ -1079,6 +1313,5 @@ class FriendBot:
 
         except Exception as e:
             self.logger.error(f"Failed to start bot: {e}")
-            # Принудительно закрываем ресурсы при ошибке
             asyncio.run(self.cleanup())
             raise
