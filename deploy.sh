@@ -41,11 +41,15 @@ check_requirements() {
         exit 1
     fi
 
-    # Check Docker Compose
-    if ! command -v docker-compose &> /dev/null; then
-        error "Docker Compose is not installed. Please install Docker Compose first."
+    # Check Docker Compose (версия 2+)
+    if ! docker compose version &> /dev/null; then
+        error "Docker Compose (версия 2+) is not installed. Please install Docker Compose plugin."
+        echo "For installation: https://docs.docker.com/compose/install/compose-plugin/"
         exit 1
     fi
+
+    DOCKER_COMPOSE_VERSION=$(docker compose version --short)
+    log "Docker Compose version: $DOCKER_COMPOSE_VERSION"
 
     # Check .env file
     if [ ! -f .env ]; then
@@ -226,22 +230,19 @@ error() {
 }
 
 # Configuration
-BACKUP_DIR="/backups"
+BACKUP_DIR="./backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="ai-friend-backup-${TIMESTAMP}.sql"
 RETENTION_DAYS=7
 
 log "Starting database backup..."
 
-# Check if backup directory exists
-if [ ! -d "$BACKUP_DIR" ]; then
-    error "Backup directory $BACKUP_DIR does not exist"
-    exit 1
-fi
+# Create backup directory if it doesn't exist
+mkdir -p "$BACKUP_DIR"
 
 # Create backup
 log "Creating backup: $BACKUP_FILE"
-if docker-compose exec -T postgres pg_dump -U postgres -d ai-friend --verbose > "$BACKUP_DIR/$BACKUP_FILE"; then
+if docker compose exec -T postgres pg_dump -U postgres -d ai-friend --verbose > "$BACKUP_DIR/$BACKUP_FILE"; then
     log "Backup created successfully: $BACKUP_FILE"
 
     # Compress backup
@@ -289,7 +290,7 @@ error() {
 }
 
 # Configuration
-BACKUP_DIR="/backups"
+BACKUP_DIR="./backups"
 
 log "Starting database restore..."
 
@@ -336,7 +337,7 @@ fi
 
 # Stop bot service to prevent data corruption
 log "Stopping bot service..."
-docker-compose stop bot
+docker compose stop bot
 
 # Decompress backup
 log "Decompressing backup..."
@@ -344,15 +345,15 @@ gunzip -c "$SELECTED_BACKUP" > "/tmp/$BACKUP_BASENAME"
 
 # Restore database
 log "Restoring database..."
-if docker-compose exec -T postgres psql -U postgres -d ai-friend -f /backups/restore.tmp > /dev/null 2>&1; then
+if docker compose exec -T postgres psql -U postgres -d ai-friend -f /tmp/$BACKUP_BASENAME > /dev/null 2>&1; then
     log "Database restored successfully!"
 else
     # If database doesn't exist, create it first
     log "Creating database..."
-    docker-compose exec -T postgres createdb -U postgres ai-friend 2>/dev/null || true
+    docker compose exec -T postgres createdb -U postgres ai-friend 2>/dev/null || true
 
     log "Restoring to new database..."
-    docker-compose exec -T postgres psql -U postgres -d ai-friend -f /backups/restore.tmp
+    docker compose exec -T postgres psql -U postgres -d ai-friend -f /tmp/$BACKUP_BASENAME
 fi
 
 # Cleanup
@@ -360,7 +361,7 @@ rm -f "/tmp/$BACKUP_BASENAME"
 
 # Start bot service
 log "Starting bot service..."
-docker-compose start bot
+docker compose start bot
 
 log "Restore completed successfully!"
 EOF
@@ -372,7 +373,7 @@ EOF
 set -e
 
 # Configuration
-BACKUP_DIR="/backups"
+BACKUP_DIR="./backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="ai-friend-auto-backup-${TIMESTAMP}.sql.gz"
 RETENTION_DAYS=3
@@ -381,9 +382,12 @@ log() {
     echo "$(date +'%Y-%m-%d %H:%M:%S') - $1"
 }
 
+# Create backup directory if it doesn't exist
+mkdir -p "$BACKUP_DIR"
+
 # Create backup
 log "Starting automatic backup..."
-docker-compose exec -T postgres pg_dump -U postgres -d ai-friend | gzip > "$BACKUP_DIR/$BACKUP_FILE"
+docker compose exec -T postgres pg_dump -U postgres -d ai-friend | gzip > "$BACKUP_DIR/$BACKUP_FILE"
 
 if [ $? -eq 0 ]; then
     log "Automatic backup successful: $BACKUP_FILE"
@@ -464,7 +468,7 @@ wait_for_services() {
 
     # Wait for PostgreSQL
     log "Waiting for PostgreSQL..."
-    until docker-compose exec -T postgres pg_isready -U postgres > /dev/null 2>&1; do
+    until docker compose exec -T postgres pg_isready -U postgres > /dev/null 2>&1; do
         sleep 5
         echo -n "."
     done
@@ -554,14 +558,14 @@ init_database() {
     sleep 10
 
     # Check if database exists and is accessible
-    if docker-compose exec -T postgres psql -U postgres -l | grep -q "ai-friend"; then
+    if docker compose exec -T postgres psql -U postgres -l | grep -q "ai-friend"; then
         log "Database 'ai-friend' exists ✓"
     else
         warn "Database 'ai-friend' does not exist, it will be created automatically"
     fi
 
     # Run a simple health check query
-    if docker-compose exec -T postgres psql -U postgres -d ai-friend -c "SELECT 1;" > /dev/null 2>&1; then
+    if docker compose exec -T postgres psql -U postgres -d ai-friend -c "SELECT 1;" > /dev/null 2>&1; then
         log "Database connection test passed ✓"
     else
         warn "Database connection test failed, tables will be created on first run"
@@ -576,15 +580,15 @@ deploy_app() {
 
     # Stop existing containers
     log "Stopping existing containers..."
-    docker-compose down
+    docker compose down
 
     # Pull latest images
     log "Pulling latest images..."
-    docker-compose pull
+    docker compose pull
 
     # Build and start services
     log "Building and starting services..."
-    docker-compose up --build -d
+    docker compose up --build -d
 
     # Wait for services
     wait_for_services
@@ -616,19 +620,19 @@ show_info() {
     echo "   Auto backup:    ./backup/scripts/auto_backup.sh"
     echo ""
     log "🔧 Services Status:"
-    docker-compose ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
+    docker compose ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
     echo ""
     log "📝 Next steps:"
     echo "   1. Check Kibana: Go to http://localhost:5601"
     echo "   2. Create index pattern: 'friend-bot-logs-*'"
     echo "   3. Check Grafana: http://localhost:3001 (admin/admin)"
     echo "   4. Test bot: Send /start to your Telegram bot"
-    echo "   5. View logs: docker-compose logs -f bot"
+    echo "   5. View logs: docker compose logs -f bot"
     echo "   6. Setup backup cron: add './backup/scripts/auto_backup.sh' to crontab"
     echo ""
     log "🐛 Troubleshooting:"
-    echo "   View logs: docker-compose logs [service-name]"
-    echo "   Restart service: docker-compose restart [service-name]"
+    echo "   View logs: docker compose logs [service-name]"
+    echo "   Restart service: docker compose restart [service-name]"
     echo "   Check health: curl http://localhost:9200/_cluster/health"
     echo "   Backup database: ./backup/scripts/backup.sh"
     echo ""
@@ -643,14 +647,14 @@ health_check() {
     echo "---------------------"
 
     # Check bot container
-    if docker-compose ps bot | grep -q "Up"; then
+    if docker compose ps bot | grep -q "Up"; then
         log "Bot service: ✓ Healthy"
     else
         error "Bot service: ✗ Unhealthy"
     fi
 
     # Check PostgreSQL
-    if docker-compose exec -T postgres pg_isready -U postgres > /dev/null 2>&1; then
+    if docker compose exec -T postgres pg_isready -U postgres > /dev/null 2>&1; then
         log "PostgreSQL: ✓ Healthy"
     else
         error "PostgreSQL: ✗ Unhealthy"

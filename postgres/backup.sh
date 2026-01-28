@@ -3,7 +3,7 @@
 export DOCKER_API_VERSION=1.44
 
 set -e
-BACKUP_DIR="./postgres/backups"
+BACKUP_DIR="./backups"
 DATE=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="$BACKUP_DIR/backup_${DATE}.sql"
 echo "💾 Creating PostgreSQL backup: $BACKUP_FILE"
