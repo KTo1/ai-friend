@@ -1,4 +1,3 @@
-import logging
 import psycopg2
 import psycopg2.extras
 from typing import List, Dict, Optional, Any
@@ -58,6 +57,7 @@ class PostgreSQLDatabase:
                                            system_prompt TEXT NOT NULL,
                                            avatar BYTEA NOT NULL,
                                            avatar_mime_type VARCHAR(50) DEFAULT 'image/jpeg',
+                                           avatar_file_id TEXT,
                                            is_active BOOLEAN DEFAULT TRUE,
                                            display_order INTEGER DEFAULT 0,
                                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -139,7 +139,8 @@ class PostgreSQLDatabase:
                         character_id INTEGER REFERENCES characters(id), 
                         role TEXT NOT NULL,
                         content TEXT NOT NULL,
-                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        deleted_at TIMESTAMP
                     )
                 ''')
 

@@ -35,37 +35,24 @@ class ManageTariffUseCase:
     @trace_span("usecase.get_user_tariff", attributes={"component": "application"})
     def get_user_tariff_info(self, user_id: int) -> str:
         """Получить информацию о тарифе пользователя"""
+
         user_tariff = self.tariff_service.get_user_tariff(user_id)
+        tariff = self.tariff_service.get_tariff_by_id(user_tariff.tariff_plan_id)
 
         if not user_tariff:
             return f"ℹ️ У пользователя {user_id} не назначен тарифный план"
 
-        message = f"📊 **Тариф пользователя {user_id}:**\n\n"
-        message += f"• Тариф: **{user_tariff.tariff_plan.name}**\n"
-        message += f"• Активирован: {user_tariff.activated_at.strftime('%d.%m.%Y %H:%M')}\n"
+        message = f"📋 **Тарифный план: {tariff.name}**\n\n"
 
-        if user_tariff.expires_at:
-            days_remaining = user_tariff.days_remaining()
-            message += f"• Истекает: {user_tariff.expires_at.strftime('%d.%m.%Y')}\n"
-            message += f"• Осталось дней: {days_remaining}\n"
-            if user_tariff.is_expired():
-                message += "• ⚠️ **ТАРИФ ИСТЕК**\n"
+        days_remaining = user_tariff.days_remaining()
+        message += f"• Истекает: {user_tariff.expires_at.strftime('%d.%m.%Y %H:%M')}\n"
+        if user_tariff.is_expired():
+            message += "• ⚠️ **ТАРИФ ИСТЕК**\n\n"
         else:
-            message += "• Срок действия: бессрочно\n"
+            message += f"• Осталось дней: {days_remaining}\n\n"
 
-        message += f"• Статус: {'Активен' if user_tariff.is_active else 'Неактивен'}\n\n"
-
-        # ИНФОРМАЦИЯ О ЛИМИТАХ ТАРИФА
-        tariff = user_tariff.tariff_plan
-        message += "🕒 **Рейт-лимиты:**\n"
-        message += f"• В минуту: {tariff.rate_limits.messages_per_minute} сообщений\n"
-        message += f"• В час: {tariff.rate_limits.messages_per_hour} сообщений\n"
-        message += f"• В день: {tariff.rate_limits.messages_per_day} сообщений\n\n"
-
-        message += "📏 **Лимиты сообщений:**\n"
-        message += f"• Длина сообщения: {tariff.message_limits.max_message_length} символов\n"
-        message += f"• История сообщений: {tariff.message_limits.max_context_messages}\n"
-        message += f"• Длина контекста: {tariff.message_limits.max_context_length} символов\n"
+        message += f"📝 {tariff.description}\n"
+        message += f"По всем возникающим вопросам пишете в техподдержку: @youraigirls_manager"
 
         return message
 

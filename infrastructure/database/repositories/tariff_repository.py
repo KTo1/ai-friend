@@ -17,37 +17,6 @@ class TariffRepository:
     def _init_tables(self):
         """Инициализация таблиц тарифов"""
         try:
-            # Таблица тарифных планов
-            self.db.execute_query('''
-                CREATE TABLE IF NOT EXISTS tariff_plans (
-                    id SERIAL PRIMARY KEY,
-                    name VARCHAR(100) NOT NULL UNIQUE,
-                    description TEXT,
-                    price FLOAT DEFAULT 0,
-                    is_active BOOLEAN DEFAULT TRUE,
-                    is_default BOOLEAN DEFAULT FALSE,
-                    rate_limits JSONB NOT NULL,
-                    message_limits JSONB NOT NULL,
-                    features JSONB DEFAULT '{}',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
-            # Таблица пользовательских тарифов
-            self.db.execute_query('''
-                CREATE TABLE IF NOT EXISTS user_tariffs (
-                    user_id BIGINT PRIMARY KEY,
-                    tariff_plan_id INTEGER NOT NULL,
-                    activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    expires_at TIMESTAMP,
-                    is_active BOOLEAN DEFAULT TRUE,
-
-                    CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-                    CONSTRAINT fk_tariff_plan FOREIGN KEY (tariff_plan_id) REFERENCES tariff_plans(id)
-                )
-            ''')
-
             self._create_default_tariffs()
 
         except Exception as e:
@@ -55,31 +24,30 @@ class TariffRepository:
 
     def _create_default_tariffs(self):
         """Создать тарифы по умолчанию если их нет"""
+
         default_tariffs = [
             {
-                'name': 'Бесплатный',
-                'description': 'Базовый тариф для новых пользователей',
-                'price': 0,
-                'rate_limits': RateLimitConfig(messages_per_minute=2, messages_per_hour=10, messages_per_day=20),
-                'message_limits': MessageLimitConfig(max_message_length=1000, max_context_messages=10, max_context_length=2000),
-                'is_default': True,
-                'features': {'support': 'basic'}
-            },
-            {
-                'name': 'Стандартный',
-                'description': 'Популярный тариф для активных пользователей',
-                'price': 1199,
-                'rate_limits': RateLimitConfig(messages_per_minute=10, messages_per_hour=100, messages_per_day=500),
-                'message_limits': MessageLimitConfig(max_message_length=5000, max_context_messages=20, max_context_length=5000),
-                'features': {'support': 'priority'}
-            },
-            {
                 'name': 'Премиум',
-                'description': 'Максимальные возможности для профессионалов',
-                'price': 2799,
-                'rate_limits': RateLimitConfig(messages_per_minute=20, messages_per_hour=200, messages_per_day=1000),
-                'message_limits': MessageLimitConfig(max_message_length=10000, max_context_messages=30, max_context_length=10000),
-                'features': {'support': '24/7'}
+                'description': """Общайтесь без границ с полной свободой и приоритетным вниманием.
+
+✨ Что такое премиум? Премиум это:
+
+📨 Безлимитные сообщения в день
+Пишите сколько угодно — каждый ваш вопрос важен.
+
+📜 Нет ограничений на длину
+От детального брифа до целой статьи — принимаем тексты любого объема.
+
+🧠 Долговременная память диалога
+Я помню контекст наших бесед, чтобы общение было последовательным и глубоким.
+
+🚀 Приоритетная поддержка
+Ваши запросы обрабатываются в первую очередь. Вы — в приоритете.
+""",
+                'price': 799,
+                'rate_limits': RateLimitConfig(messages_per_minute=120, messages_per_hour=99999, messages_per_day=99999),
+                'message_limits': MessageLimitConfig(max_message_length=4000, max_context_messages=30),
+                'is_default': True,
             }
         ]
 
@@ -109,7 +77,6 @@ class TariffRepository:
             'message_limits': {
                 'max_message_length': tariff.message_limits.max_message_length,
                 'max_context_messages': tariff.message_limits.max_context_messages,
-                'max_context_length': tariff.message_limits.max_context_length
             },
             'features': tariff.features
         }
@@ -151,18 +118,6 @@ class TariffRepository:
                    rate_limits, message_limits, features, created_at, updated_at
             FROM tariff_plans WHERE id = %s
         ''', (tariff_id,))
-
-        if result:
-            return self._parse_tariff_plan(result)
-        return None
-
-    def get_tariff_plan_by_name(self, name: str) -> Optional[TariffPlan]:
-        """Получить тарифный план по имени"""
-        result = self.db.fetch_one('''
-            SELECT id, name, description, price, is_active, is_default,
-                   rate_limits, message_limits, features, created_at, updated_at
-            FROM tariff_plans WHERE name = %s
-        ''', (name,))
 
         if result:
             return self._parse_tariff_plan(result)
@@ -281,8 +236,7 @@ class TariffRepository:
 
             message_limits = MessageLimitConfig(
                 max_message_length=message_limits_data.get('max_message_length', 2000),
-                max_context_messages=message_limits_data.get('max_context_messages', 10),
-                max_context_length=message_limits_data.get('max_context_length', 4000)
+                max_context_messages=message_limits_data.get('max_context_messages', 10)
             )
 
             return TariffPlan(

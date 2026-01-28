@@ -71,7 +71,7 @@ class DeepSeekClient(BaseAIClient, AIClientInterface):
                 "model": self.model,
                 "messages": api_messages,
                 "max_tokens": max_tokens,
-                "temperature": 1.5,
+                "temperature": 1.7,
                 "stream": False
             }
 

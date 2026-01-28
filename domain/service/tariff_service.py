@@ -1,5 +1,4 @@
-# 📄 domain/service/tariff_service.py
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
 from domain.entity.tariff_plan import TariffPlan, UserTariff
 from infrastructure.database.repositories.tariff_repository import TariffRepository
@@ -20,10 +19,6 @@ class TariffService:
     def get_tariff_by_id(self, tariff_id: int) -> Optional[TariffPlan]:
         """Получить тариф по ID"""
         return self.tariff_repo.get_tariff_plan(tariff_id)
-
-    def get_tariff_by_name(self, name: str) -> Optional[TariffPlan]:
-        """Получить тариф по имени"""
-        return self.tariff_repo.get_tariff_plan_by_name(name)
 
     def get_default_tariff(self) -> Optional[TariffPlan]:
         """Получить тариф по умолчанию"""
@@ -83,19 +78,19 @@ class TariffService:
 
         message = f"📋 **Тарифный план: {tariff.name}**\n\n"
         message += f"📝 Описание: {tariff.description}\n"
-        message += f"💰 Цена: {tariff.price} руб./месяц\n"
-        message += f"🔄 Статус: {'Активен' if tariff.is_active else 'Неактивен'}\n"
-        message += f"⚙️ По умолчанию: {'Да' if tariff.is_default else 'Нет'}\n\n"
+        message += f"💰 Цена: {tariff.price} ⭐/30 дней\n"
+        # message += f"🔄 Статус: {'Активен' if tariff.is_active else 'Неактивен'}\n"
 
-        message += "🕒 **Рейт-лимиты:**\n"
-        message += f"• В минуту: {tariff.rate_limits.messages_per_minute} сообщений\n"
-        message += f"• В час: {tariff.rate_limits.messages_per_hour} сообщений\n"
-        message += f"• В день: {tariff.rate_limits.messages_per_day} сообщений\n\n"
+        # message += f"⚙️ По умолчанию: {'Да' if tariff.is_default else 'Нет'}\n\n"
 
-        message += "📏 **Лимиты сообщений:**\n"
-        message += f"• Макс. длина сообщения: {tariff.message_limits.max_message_length} символов\n"
-        message += f"• Макс. сообщений в истории: {tariff.message_limits.max_context_messages}\n"
-        message += f"• Макс. длина контекста: {tariff.message_limits.max_context_length} символов\n\n"
+        # message += "🕒 **Рейт-лимиты:**\n"
+        # message += f"• В минуту: {tariff.rate_limits.messages_per_minute} сообщений\n"
+        # message += f"• В час: {tariff.rate_limits.messages_per_hour} сообщений\n"
+        # message += f"• В день: {tariff.rate_limits.messages_per_day} сообщений\n\n"
+        #
+        # message += "📏 **Лимиты сообщений:**\n"
+        # message += f"• Макс. длина сообщения: {tariff.message_limits.max_message_length} символов\n"
+        # message += f"• Макс. сообщений в истории: {tariff.message_limits.max_context_messages}\n"
 
         if tariff.features:
             message += "🌟 **Особенности:**\n"

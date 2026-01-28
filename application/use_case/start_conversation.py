@@ -30,7 +30,7 @@ class StartConversationUseCase:
             if not user_tariff:
                 default_tariff = self.tariff_service.get_default_tariff()
                 if default_tariff:
-                    success, message = self.tariff_service.assign_tariff_to_user(user.user_id, default_tariff.id)
+                    success, message = self.tariff_service.assign_tariff_to_user(user.user_id, default_tariff.id, duration_days=1)
                     if success:
                         self.logger.info(f"Assigned default tariff '{default_tariff.name}' to new user {user.user_id}")
 

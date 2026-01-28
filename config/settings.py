@@ -144,10 +144,6 @@ class MessageLimitConfig:
     def default_max_context_messages(self):
         return int(os.getenv("DEFAULT_MAX_CONTEXT_MESSAGES", "10"))
 
-    @property
-    def default_max_context_length(self):
-        return int(os.getenv("DEFAULT_MAX_CONTEXT_LENGTH", "4000"))
-
 
 @dataclass
 class TelegramConfig:
