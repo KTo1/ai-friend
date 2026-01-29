@@ -338,6 +338,19 @@ class FriendBot:
             **kwargs
         )
 
+    async def _safe_reply_without_format(self, update: Update, text: str, **kwargs) -> bool:
+        """Безопасный ответ на сообщение с учетом лимитов Telegram"""
+        if not hasattr(self, 'application') or not self.application:
+            self.logger.error("Bot application not available")
+            return False
+
+        return await self.telegram_sender.reply_to_message(
+            bot=self.application.bot,
+            update=update,
+            text=text,
+            **kwargs
+        )
+
     async def _safe_send_message(self, chat_id: int, text: str, **kwargs) -> bool:
         """Безопасная отправка сообщения с учетом лимитов Telegram"""
         if not hasattr(self, 'application') or not self.application:
@@ -1106,7 +1119,6 @@ class FriendBot:
                     }
                 )
 
-            # Извлекаем и обновляем профиль
             profile_data = await self.manage_profile_uc.extract_and_update_profile(user_id, user_message)
 
             await self._send_typing_status(user_id)
@@ -1123,7 +1135,7 @@ class FriendBot:
             if not self.manage_admin_uc.is_user_admin(user_id):
                 self.check_limits_uc.record_message_usage(user_id, len(user_message), tariff)
 
-            success = await self._safe_reply(update, response)
+            success = await self._safe_reply_without_format(update, response)
             if not success:
                 self.logger.error(f"Failed to send response to user {user_id}")
 

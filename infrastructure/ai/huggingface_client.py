@@ -1,6 +1,6 @@
 import os
 import re
-from openai import AsyncOpenAI  # ← ВАЖНО: AsyncOpenAI вместо OpenAI
+# from openai import AsyncOpenAI  # ← ВАЖНО: AsyncOpenAI вместо OpenAI
 from typing import List, Dict
 from domain.interfaces.ai_client import AIClientInterface
 from infrastructure.monitoring.metrics import metrics_collector
@@ -8,7 +8,7 @@ from infrastructure.monitoring.tracing import trace_span
 from infrastructure.monitoring.logging import StructuredLogger
 from infrastructure.ai.base_ai_client import BaseAIClient
 
-
+# для эмбеддингов
 class HuggingFaceClient(BaseAIClient, AIClientInterface):
     def __init__(self):
         self.api_key = os.getenv("HF_API_KEY")
@@ -16,10 +16,10 @@ class HuggingFaceClient(BaseAIClient, AIClientInterface):
         self.logger = StructuredLogger("huggingface_client")
 
         # Асинхронный OpenAI клиент - КОРРЕКТНО!
-        self.client = AsyncOpenAI(
-            base_url="https://router.huggingface.co/v1",
-            api_key=self.api_key or "hf_placeholder"
-        )
+        # self.client = AsyncOpenAI(
+        #     base_url="https://router.huggingface.co/v1",
+        #     api_key=self.api_key or "hf_placeholder"
+        # )
 
     @trace_span("huggingface.generate_response", attributes={"component": "ai"})
     async def generate_response(self, messages: List[Dict], max_tokens: int = 500, temperature: float = 0.7) -> str:
