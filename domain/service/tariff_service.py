@@ -33,10 +33,13 @@ class TariffService:
             if not tariff:
                 return False, f"❌ Тарифный план с ID {tariff_plan_id} не найден"
 
-            # Рассчитываем дату истечения
-            expires_at = None
-            if duration_days:
-                expires_at = datetime.utcnow() + timedelta(days=duration_days)
+            user_tariff = self.tariff_repo.get_user_tariff(user_id)
+            if not user_tariff or user_tariff.is_expired():
+                expires_at = None
+                if duration_days:
+                    expires_at = datetime.utcnow() + timedelta(days=duration_days)
+            else:
+                expires_at = user_tariff.expires_at + timedelta(days=duration_days)
 
             # Назначаем тариф
             success = self.tariff_repo.assign_tariff_to_user(user_id, tariff_plan_id, expires_at)
