@@ -475,45 +475,45 @@ wait_for_services() {
     echo ""
     log "PostgreSQL is ready ✓"
 
-    # Wait for Elasticsearch (может занять время при первом запуске)
-    log "Waiting for Elasticsearch (this may take a while on first start)..."
-    local es_attempts=0
-    local max_es_attempts=30
-
-    while [ $es_attempts -lt $max_es_attempts ]; do
-        if curl -s http://localhost:9200/_cluster/health > /dev/null 2>&1; then
-            local es_status=$(curl -s http://localhost:9200/_cluster/health | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
-            if [ "$es_status" = "green" ] || [ "$es_status" = "yellow" ]; then
-                log "Elasticsearch is ready (status: $es_status) ✓"
-                break
-            fi
-        fi
-
-        es_attempts=$((es_attempts + 1))
-        sleep 10
-        echo -n "."
-    done
-
-    if [ $es_attempts -eq $max_es_attempts ]; then
-        warn "Elasticsearch is taking longer than expected to start"
-        warn "You can check its status manually with: curl http://localhost:9200/_cluster/health"
-    fi
-
-    # Wait for Kibana
-    log "Waiting for Kibana..."
-    local kibana_attempts=0
-    local max_kibana_attempts=20
-
-    while [ $kibana_attempts -lt $max_kibana_attempts ]; do
-        if curl -s http://localhost:5601/api/status > /dev/null 2>&1; then
-            log "Kibana is ready ✓"
-            break
-        fi
-
-        kibana_attempts=$((kibana_attempts + 1))
-        sleep 10
-        echo -n "."
-    done
+#    # Wait for Elasticsearch (может занять время при первом запуске)
+#    log "Waiting for Elasticsearch (this may take a while on first start)..."
+#    local es_attempts=0
+#    local max_es_attempts=30
+#
+#    while [ $es_attempts -lt $max_es_attempts ]; do
+#        if curl -s http://localhost:9200/_cluster/health > /dev/null 2>&1; then
+#            local es_status=$(curl -s http://localhost:9200/_cluster/health | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
+#            if [ "$es_status" = "green" ] || [ "$es_status" = "yellow" ]; then
+#                log "Elasticsearch is ready (status: $es_status) ✓"
+#                break
+#            fi
+#        fi
+#
+#        es_attempts=$((es_attempts + 1))
+#        sleep 10
+#        echo -n "."
+#    done
+#
+#    if [ $es_attempts -eq $max_es_attempts ]; then
+#        warn "Elasticsearch is taking longer than expected to start"
+#        warn "You can check its status manually with: curl http://localhost:9200/_cluster/health"
+#    fi
+#
+#    # Wait for Kibana
+#    log "Waiting for Kibana..."
+#    local kibana_attempts=0
+#    local max_kibana_attempts=20
+#
+#    while [ $kibana_attempts -lt $max_kibana_attempts ]; do
+#        if curl -s http://localhost:5601/api/status > /dev/null 2>&1; then
+#            log "Kibana is ready ✓"
+#            break
+#        fi
+#
+#        kibana_attempts=$((kibana_attempts + 1))
+#        sleep 10
+#        echo -n "."
+#    done
 
     # Wait for Prometheus
     log "Waiting for Prometheus..."
