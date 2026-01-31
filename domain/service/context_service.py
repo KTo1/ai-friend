@@ -4,8 +4,10 @@ from domain.entity.profile import UserProfile
 
 class ContextService:
     @staticmethod
-    def prepare_messages_for_ai(system_prompt: str, context_messages: List[Dict], current_message: str) -> List[Dict]:
+    def prepare_messages_for_ai(system_prompt: str, context_messages: List[Dict], current_message: str, rag_context: str) -> List[Dict]:
         """Подготовка сообщений для отправки в AI"""
+
+
         messages = [{"role": "system", "content": system_prompt}]
 
         for msg in context_messages:

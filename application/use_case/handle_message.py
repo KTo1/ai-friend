@@ -51,7 +51,7 @@ class HandleMessageUseCase:
             # Подготавливаем сообщения для AI
             enhanced_system_prompt = f"{character.system_prompt}\n\n{rag_context}"
             messages = self.context_service.prepare_messages_for_ai(
-                enhanced_system_prompt, context_messages, message
+                enhanced_system_prompt, context_messages, message, rag_context
             )
 
             # БЕЗОПАСНАЯ генерация ответа

@@ -44,18 +44,3 @@ class ManageCharacterUseCase:
             self.logger.error(f'Error setting character for user {user_id}: {e}')
             return False, f'❌ Ошибка при выборе персонажа: {str(e)}'
 
-    @trace_span('usecase.get_character_info', attributes={'component': 'application'})
-    def get_character_info(self, character_id: int) -> Optional[Dict[str, Any]]:
-        character = self.character_repo.get_character(character_id)
-        if not character:
-            return None
-
-        return {
-            'id': character.id,
-            'name': character.name,
-            'description': character.description,
-            'prompt_preview': character.system_prompt[:100] + '...' if len(
-                character.system_prompt) > 100 else character.system_prompt,
-            'avatar_mime_type': character.avatar_mime_type,
-            'avatar_size': len(character.avatar)
-        }
