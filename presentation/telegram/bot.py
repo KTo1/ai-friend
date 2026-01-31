@@ -148,20 +148,21 @@ class FriendBot:
             keyboard.append(nav_buttons)
 
         # Дополнительная навигация: кнопка для перехода к первому/последнему
-        if total_pages > 1:
-            quick_nav = []
-            if page > 0:
-                quick_nav.append(InlineKeyboardButton("⏮️ Первый", callback_data="char_page_0"))
-            if page < total_pages - 1:
-                quick_nav.append(InlineKeyboardButton("⏭️ Последний", callback_data=f"char_page_{total_pages - 1}"))
-            if quick_nav:
-                keyboard.append(quick_nav)
+        # if total_pages > 1:
+        #     quick_nav = []
+        #     if page > 0:
+        #         quick_nav.append(InlineKeyboardButton("⏮️ Первый", callback_data="char_page_0"))
+        #     if page < total_pages - 1:
+        #         quick_nav.append(InlineKeyboardButton("⏭️ Последний", callback_data=f"char_page_{total_pages - 1}"))
+        #     if quick_nav:
+        #         keyboard.append(quick_nav)
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         # Отправляем фото с описанием
         try:
-            caption_text = f'*{character.name}*\n\n{character.description}\n\nИспользуйте кнопки навигации для просмотра других персонажей.'
+            # caption_text = f'*{character.name}*\n\n{character.description}\n\nИспользуйте кнопки навигации для просмотра других персонажей.'
+            caption_text = f'*{character.name}*\n\n{character.description}\n'
             escaped_caption = MarkdownFormatter.format_text(caption_text, ParseMode.MARKDOWN_V2)
 
             success = await self._send_photo_with_bytes(
