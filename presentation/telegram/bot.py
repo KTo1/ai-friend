@@ -165,14 +165,24 @@ class FriendBot:
             caption_text = f'*{character.name}*\n\n{character.description}\n'
             escaped_caption = MarkdownFormatter.format_text(caption_text, ParseMode.MARKDOWN_V2)
 
-            success = await self._send_photo_with_bytes(
+            success = await self._send_avatar(
                 chat_id=chat_id,
-                photo_bytes=character.avatar,
+                avatar_bytes=character.avatar,
+                mime_type=character.avatar_mime_type,  # Ключевое изменение!
                 caption=escaped_caption,
                 parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=reply_markup,
                 character=character
             )
+
+            # success = await self._send_photo_with_bytes(
+            #     chat_id=chat_id,
+            #     photo_bytes=character.avatar,
+            #     caption=escaped_caption,
+            #     parse_mode=ParseMode.MARKDOWN_V2,
+            #     reply_markup=reply_markup,
+            #     character=character
+            # )
 
             if not success:
                 raise Exception("Failed to send photo")
@@ -251,6 +261,84 @@ class FriendBot:
 
         elif data == 'char_page_info':
             await query.answer('Используйте кнопки для навигации')
+
+    async def _send_avatar(self, chat_id: int, avatar_bytes: bytes, mime_type: str, caption: str = None,
+                           reply_markup=None, parse_mode: str = None, character: Character = None) -> bool:
+        """
+        Универсальный метод отправки аватара (как статичного, так и GIF).
+        Определяет тип по MIME и использует правильный метод Telegram API.
+        """
+        if not hasattr(self, 'application') or not self.application:
+            self.logger.error('Bot application not available')
+            return False
+
+        try:
+            bot = self.application.bot
+
+            # Пробуем использовать cached file_id для всех типов
+            if character and character.avatar_file_id:
+                try:
+                    if mime_type == 'image/gif':
+                        await bot.send_animation(chat_id=chat_id, animation=character.avatar_file_id, caption=caption,
+                                                 parse_mode=parse_mode, reply_markup=reply_markup)
+                    else:
+                        await bot.send_photo(chat_id=chat_id, photo=character.avatar_file_id, caption=caption,
+                                             parse_mode=parse_mode, reply_markup=reply_markup)
+                    self.logger.debug(f'Used cached file_id ({mime_type}) for character {character.id}')
+                    return True
+                except Exception as e:
+                    self.logger.warning(f'Cached file_id invalid, reuploading: {e}')
+
+            # Если file_id нет или он невалидный - загружаем файл заново
+            import tempfile
+            file_suffix = '.gif' if mime_type == 'image/gif' else '.jpg'
+            with tempfile.NamedTemporaryFile(suffix=file_suffix, delete=False) as temp_file:
+                temp_file.write(avatar_bytes)
+                temp_file_path = temp_file.name
+
+            try:
+                with open(temp_file_path, 'rb') as file_to_send:
+                    if mime_type == 'image/gif':
+                        # Отправка как анимации
+                        message = await bot.send_animation(
+                            chat_id=chat_id,
+                            animation=file_to_send,
+                            caption=caption,
+                            parse_mode=parse_mode,
+                            reply_markup=reply_markup
+                        )
+                        # Сохраняем file_id для анимации (будет доступен в message.animation)
+                        if character and message.animation:
+                            file_id = message.animation.file_id
+                            success = self.character_repo.update_character_avatar_file_id(character.id, file_id)
+                            if success:
+                                character.update_avatar_file_id(file_id)
+                                self.logger.info(f'Saved animation file_id for character {character.id}')
+                    else:
+                        # Оригинальная логика для фото
+                        message = await bot.send_photo(
+                            chat_id=chat_id,
+                            photo=file_to_send,
+                            caption=caption,
+                            parse_mode=parse_mode,
+                            reply_markup=reply_markup
+                        )
+                        if character and message.photo:
+                            photo = message.photo[-1]
+                            file_id = photo.file_id
+                            success = self.character_repo.update_character_avatar_file_id(character.id, file_id)
+                            if success:
+                                character.update_avatar_file_id(file_id)
+                    return True
+            finally:
+                import os
+                try:
+                    os.unlink(temp_file_path)
+                except Exception as e:
+                    self.logger.warning(f'Could not delete temp file {temp_file_path}: {e}')
+        except Exception as e:
+            self.logger.error(f'Error sending avatar (type: {mime_type}): {e}')
+            return False
 
     async def _send_photo_with_bytes(self, chat_id: int, photo_bytes: bytes, caption: str = None,
                                      reply_markup=None, parse_mode: str = None,
