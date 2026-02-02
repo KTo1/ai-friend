@@ -1294,12 +1294,13 @@ class FriendBot:
         message += f"{character.description}\n\n"
         message += f"💬 Чтобы сменить персонажа, используйте /start"
 
+        escaped_message = MarkdownFormatter.format_text(message, ParseMode.MARKDOWN_V2)
         # Пытаемся отправить фото персонажа
         try:
             success = await self._send_photo_with_bytes(
                 chat_id=update.effective_chat.id,
                 photo_bytes=character.avatar,
-                caption=message,
+                caption=escaped_message,
                 parse_mode=ParseMode.MARKDOWN_V2,
                 character=character
             )
