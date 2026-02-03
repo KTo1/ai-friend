@@ -86,7 +86,7 @@ services:
       - "127.0.0.1:3001:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=not_admin
-      - GF_SECURITY_ADMIN_PASSWORD=)NXuDajzbpk_4$_S0zFw
+      - GF_SECURITY_ADMIN_PASSWORD=n5GrRoAyG0Pjt%_MQdOL
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
