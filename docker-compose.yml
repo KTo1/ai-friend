@@ -6,8 +6,8 @@ services:
     image: pgvector/pgvector:pg15
     environment:
       POSTGRES_DB: ${DB_NAME:-ai-friend}
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_USER: ${DB_USER:-not_postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-_koa3f7uN-JLH3x@1vR$}
     ports:
       - "5433:5432"
     volumes:
@@ -29,8 +29,8 @@ services:
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=${DB_NAME:-ai-friend}
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_USER=${DB_USER:-not_postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-_koa3f7uN-JLH3x@1vR$}
 
       # Telegram
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
@@ -62,9 +62,9 @@ services:
 
   # Prometheus для сбора метрик
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:3.9.1
     ports:
-      - "9091:9090"  # ← ИЗМЕНИЛИ ПОРТ на 9091
+      - "127.0.0.1:9091:9090"  # ← ИЗМЕНИЛИ ПОРТ на 9091
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -81,12 +81,12 @@ services:
 
   # Grafana для визуализации метрик
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:12.3.2
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=not_admin
+      - GF_SECURITY_ADMIN_PASSWORD=)NXuDajzbpk_4$_S0zFw
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
