@@ -62,7 +62,7 @@ services:
 
   # Prometheus для сбора метрик
   prometheus:
-    image: prom/prometheus:3.9.1
+    image: prom/prometheus:v3.9.1
     ports:
       - "127.0.0.1:9091:9090"  # ← ИЗМЕНИЛИ ПОРТ на 9091
     command:
