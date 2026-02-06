@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """
-📊 Скрипт для экспорта ВСЕХ диалогов из базы данных для анализа и улучшения промптов персонажей.
-Экспортирует ВСЕ диалоги без ограничений для полного анализа.
+📊 Экспорт диалогов для анализа промптов персонажей с умной структурой
 
-Использование:
-    python analyze_conversations.py --output-dir ./conversation_analysis
+Структура экспорта:
+  character_name/
+    ├── TASK.txt                    # Главная задача для AI
+    ├── current_prompt.txt          # Текущий промпт персонажа
+    ├── statistics.txt              # Статистика по диалогам
+    ├── dialogue_001_user_12345.txt # Диалог 1 (пользователь 12345)
+    ├── dialogue_002_user_67890.txt # Диалог 2 (пользователь 67890)
+    └── ...                         # Все остальные диалоги
 """
 
 import os
@@ -12,15 +17,15 @@ import sys
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Any
+from typing import List, Dict, Tuple, Optional
 import argparse
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
 
 # ============================================================================
-# 📄 analyze_conversations.py
+# 📄 export_conversations_for_analysis.py
 # ============================================================================
 
 @dataclass
@@ -71,7 +76,7 @@ class UserDialogue:
 
 
 class ConversationExporter:
-    """Экспортер ВСЕХ диалогов из базы данных"""
+    """Экспортер диалогов из базы данных"""
 
     def __init__(self, db_config: DatabaseConfig):
         self.db_config = db_config
@@ -101,7 +106,7 @@ class ConversationExporter:
         print("🔌 Отключение от БД")
 
     def get_all_characters(self) -> Dict[int, CharacterInfo]:
-        """Получить ВСЕХ персонажей из базы"""
+        """Получить всех персонажей из базы"""
         query = """
                 SELECT id, \
                        name, \
@@ -110,6 +115,7 @@ class ConversationExporter:
                        avatar_mime_type, \
                        is_active
                 FROM characters
+                WHERE is_active = TRUE
                 ORDER BY id \
                 """
 
@@ -156,7 +162,7 @@ class ConversationExporter:
         return None
 
     def get_conversations_for_character(self, character_id: int) -> List[UserDialogue]:
-        """Получить ВСЕ диалоги для конкретного персонажа БЕЗ ЛИМИТОВ"""
+        """Получить все диалоги для конкретного персонажа"""
         query = """
                 SELECT cc.id, \
                        cc.user_id, \
@@ -227,12 +233,12 @@ class ConversationExporter:
         return result
 
     def get_all_conversations(self) -> Dict[int, Dict]:
-        """Получить ВСЕ диалоги для ВСЕХ персонажей БЕЗ ЛИМИТОВ"""
+        """Получить все диалоги для всех персонажей"""
         characters = self.get_all_characters()
         all_conversations = {}
 
         for character_id, character in characters.items():
-            print(f"📖 Загрузка ВСЕХ диалогов для персонажа: {character.name} (ID: {character_id})")
+            print(f"📖 Загрузка диалогов для персонажа: {character.name} (ID: {character_id})")
             conversations = self.get_conversations_for_character(character_id)
             all_conversations[character_id] = {
                 'character': character,
@@ -245,392 +251,386 @@ class ConversationExporter:
 
         return all_conversations
 
-    def get_character_statistics(self) -> Dict[str, Any]:
-        """Получить общую статистику по ВСЕМ диалогам"""
-        query = """
-                SELECT c.id                       as character_id, \
-                       c.name                     as character_name, \
-                       COUNT(DISTINCT cc.user_id) as unique_users, \
-                       COUNT(cc.id)               as total_messages, \
-                       MIN(cc.timestamp)          as first_message, \
-                       MAX(cc.timestamp)          as last_message
-                FROM conversation_context cc
-                         JOIN characters c ON cc.character_id = c.id
-                WHERE cc.deleted_at IS NULL
-                GROUP BY c.id, c.name
-                ORDER BY total_messages DESC \
-                """
 
-        self.cursor.execute(query)
-        stats = {}
-        total_messages = 0
-        total_users = 0
-
-        for row in self.cursor.fetchall():
-            stats[row['character_id']] = {
-                'name': row['character_name'],
-                'unique_users': row['unique_users'],
-                'total_messages': row['total_messages'],
-                'first_message': row['first_message'],
-                'last_message': row['last_message']
-            }
-            total_messages += row['total_messages']
-            total_users += row['unique_users']
-
-        return {
-            'character_stats': stats,
-            'total_messages': total_messages,
-            'total_users': total_users,
-            'export_date': datetime.now().isoformat()
-        }
-
-
-class DialogueAnalyzer:
-    """Анализатор и экспортер ВСЕХ диалогов"""
+class DialogueExporter:
+    """Экспортер диалогов в структурированные файлы"""
 
     def __init__(self, output_dir: str = "./conversation_analysis"):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def create_analysis_prompt(self, character: CharacterInfo, dialogues: List[UserDialogue]) -> str:
-        """Создать промпт для анализа AI с ВСЕМИ диалогами"""
+    def create_task_file(self, character: CharacterInfo, dialogues: List[UserDialogue], character_dir: Path):
+        """Создать главный файл с задачей для AI"""
 
         # Статистика
         total_users = len(dialogues)
         total_messages = sum(len(d.messages) for d in dialogues)
         avg_messages_per_user = total_messages / total_users if total_users > 0 else 0
 
-        # ВСЕ диалоги включаем в промпт
-        all_dialogues_text = []
+        # Формируем список файлов с диалогами
+        dialogue_files = []
+        for i, dialogue in enumerate(dialogues, 1):
+            filename = f"dialogue_{i:03d}_user_{dialogue.user_id}.txt"
+            dialogue_files.append(filename)
 
-        for dialogue_index, dialogue in enumerate(dialogues, 1):
-            dialogue_text = f"\n{'=' * 80}\n"
-            dialogue_text += f"📝 ДИАЛОГ #{dialogue_index} | Пользователь ID: {dialogue.user_id}\n"
-            dialogue_text += f"{'=' * 80}\n"
+        task_content = f"""# 🎯 ЗАДАЧА: Анализ диалогов и улучшение промпта персонажа
 
+        ## 📋 О ПРОЕКТЕ
+        Вы - эксперт по промпт-инжинирингу и анализу диалогов. Вам предоставлены реальные диалоги пользователей с ИИ-персонажем.
+        
+        ## 🤖 ПЕРСОНАЖ
+        **Имя:** {character.name}
+        **Описание:** {character.description}
+        
+        ## 📊 СТАТИСТИКА ДИАЛОГОВ
+        - **Всего пользователей:** {total_users}
+        - **Всего сообщений:** {total_messages}
+        - **Среднее сообщений на пользователя:** {avg_messages_per_user:.1f}
+        - **Дата экспорта:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        
+        ## 📁 ПРЕДОСТАВЛЕННЫЕ МАТЕРИАЛЫ
+        
+        ### 1. ТЕКУЩИЙ ПРОМПТ ПЕРСОНАЖА
+        Файл: `current_prompt.txt`
+        Содержит текущий системный промпт, который используется персонажем.
+        
+        ### 2. ДИАЛОГИ ПОЛЬЗОВАТЕЛЕЙ
+        Всего файлов с диалогами: {len(dialogue_files)}
+        
+        Список файлов:
+        {chr(10).join(f'- `{f}`' for f in dialogue_files)}
+        
+        Каждый файл содержит полный диалог одного пользователя с персонажем в формате:
+        [ВРЕМЯ] РОЛЬ: ТЕКСТ
+
+        ### 3. СТАТИСТИКА
+        Файл: `statistics.txt`
+        Подробная статистика по всем диалогам.
+
+        ## 🎯 ЗАДАНИЕ
+
+        ### ЦЕЛЬ
+        Проанализировать ВСЕ предоставленные диалоги и предложить конкретные улучшения для промпта персонажа.
+
+        ### ЧТО АНАЛИЗИРОВАТЬ
+
+        1. **📖 СОДЕРЖАНИЕ ДИАЛОГОВ:**
+           - Прочитайте ВСЕ файлы с диалогами
+           - Обратите внимание на паттерны общения
+           - Отметьте успешные и неудачные взаимодействия
+
+        2. **🤖 АНАЛИЗ ТЕКУЩЕГО ПРОМПТА:**
+           - Прочитайте файл `current_prompt.txt`
+           - Оцените, насколько промпт соответствует реальным диалогам
+           - Найдите расхождения между задуманным и реальным поведением
+
+        3. **💡 КЛЮЧЕВЫЕ ВОПРОСЫ ДЛЯ АНАЛИЗА:**
+           - Что пользователи ожидают от персонажа?
+           - Какие темы обсуждаются чаще всего?
+           - Как персонаж реагирует на разные типы сообщений?
+           - Где теряется контекст разговора?
+           - Какие эмоциональные реакции ценят пользователи?
+           - Что можно улучшить в стиле общения?
+
+            3.1. **Тон и стиль общения:**
+               - Соответствует ли стиль ответов бота характеру персонажа "{character.name}"?
+               - Поддерживается ли единый тон на протяжении всего диалога?
+               - Как пользователь реагирует на стиль общения бота?
+
+            3.2. **Контекст и память:**
+               - Сохраняется ли контекст разговора между сообщениями?
+               - Используются ли ранее упомянутые факты о пользователе?
+               - Есть ли повторения или противоречия в ответах?
+
+            3.3. **Эмоциональная составляющая:**
+               - Насколько ответы бота эмоционально окрашены?
+               - Соответствует ли уровень эмпатии ожиданиям от персонажа?
+               - Как бот реагирует на эмоциональные сообщения пользователя?
+
+            3.4. **Содержательность ответов:**
+               - Даются ли развернутые, содержательные ответы?
+               - Есть ли шаблонные или общие фразы?
+               - Насколько ответы соответствуют запросам пользователя?
+            
+            3.5. **Предложения по улучшению:**
+               - Какие аспекты промпта нужно усилить?
+               - Какие слабые места в ответах бота?
+               - Конкретные примеры улучшений из этого диалога.
+   
+        4. **🎭 ЛИЧНОСТЬ ПЕРСОНАЖА:**
+           - Соответствует ли текущая личность ожиданиям пользователей?
+           - Какие черты характера "работают" лучше всего?
+           - Что стоит усилить или ослабить?
+
+        ## 📝 ТРЕБОВАНИЯ К РЕЗУЛЬТАТУ
+
+        ### 1. КРАТКИЙ АНАЛИЗ (максимум 500 слов)
+        - Основные выводы по всем диалогам
+        - Сильные и слабые стороны текущего промпта
+        - Ключевые инсайты
+
+        ### 2. ТОП-10 КОНКРЕТНЫХ УЛУЧШЕНИЙ
+        Пронумерованный список конкретных изменений для промпта. Например:
+        1. "Добавить реакцию на комплименты"
+        2. "Улучшить обработку вопросов о хобби"
+        3. "Добавить больше эмоциональных реакций"
+
+        ### 3. ОБНОВЛЕННЫЙ ПРОМПТ
+        Полный текст нового улучшенного промпта, включая ВСЕ предложенные изменения.
+
+        ### 4. ОБЪЯСНЕНИЯ
+        Краткие пояснения к каждому изменению:
+        - Почему это важно?
+        - На основе какого диалога/паттерна предложено?
+        - Какой эффект ожидается?
+
+        ## ⚠️ ВАЖНЫЕ ЗАМЕЧАНИЯ
+
+        1. **УЧИТЫВАЙТЕ ВСЕ ДИАЛОГИ** - каждый файл содержит ценный опыт
+        2. **БУДЬТЕ КОНКРЕТНЫ** - предлагайте конкретные формулировки для промпта
+        3. **СОХРАНИТЕ СИЛЬНЫЕ СТОРОНЫ** - не ломайте то, что уже хорошо работает
+        4. **УЧИТЫВАЙТЕ КОНТЕКСТ** - промпт должен работать в рамках Telegram-бота
+        5. **ОРИЕНТИРУЙТЕСЬ НА ПОЛЬЗОВАТЕЛЕЙ** - улучшения должны быть основаны на реальных диалогах
+
+        ## 🚀 НАЧИНАЙТЕ РАБОТУ
+
+        1. Прочитайте файл `current_prompt.txt`
+        2. Изучите ВСЕ файлы с диалогами (от `dialogue_001_...` до `dialogue_{len(dialogue_files):03d}_...`)
+        3. Проанализируйте статистику в `statistics.txt`
+        4. Выполните задание, следуя требованиям выше
+
+        Удачи! Ваш анализ поможет сделать персонажа лучше для тысяч пользователей.
+        """
+
+        task_file = character_dir / "TASK.txt"
+        with open(task_file, 'w', encoding='utf-8') as f:
+            f.write(task_content)
+
+        print(f"  📋 Создан файл задачи: TASK.txt ({len(task_content):,} символов)")
+        return dialogue_files
+
+    def export_dialogue_file(self, character: CharacterInfo, dialogue: UserDialogue,
+                             dialogue_index: int, character_dir: Path):
+        """Экспортировать один диалог в отдельный файл"""
+
+        # Определяем имя файла
+        filename = f"dialogue_{dialogue_index:03d}_user_{dialogue.user_id}.txt"
+        filepath = character_dir / filename
+
+        with open(filepath, 'w', encoding='utf-8') as f:
+            # Заголовок
+            f.write(f"# Диалог #{dialogue_index}: Пользователь ID {dialogue.user_id}\n")
+            f.write(f"# Персонаж: {character.name}\n")
+            f.write(f"# Дата экспорта: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("=" * 60 + "\n\n")
+
+            # Информация о пользователе
             if dialogue.user_info:
-                username = dialogue.user_info.get('username', 'Не указан')
-                first_name = dialogue.user_info.get('first_name', 'Не указано')
-                last_name = dialogue.user_info.get('last_name', '')
-                full_name = f"{first_name} {last_name}".strip()
+                f.write("👤 ИНФОРМАЦИЯ О ПОЛЬЗОВАТЕЛЕ:\n")
+                f.write("-" * 40 + "\n")
 
-                dialogue_text += f"👤 ПОЛЬЗОВАТЕЛЬ:\n"
-                dialogue_text += f"  • ID: {dialogue.user_id}\n"
-                if username != 'Не указан':
-                    dialogue_text += f"  • Username: @{username}\n"
-                if full_name:
-                    dialogue_text += f"  • Имя: {full_name}\n"
+                username = dialogue.user_info.get('username')
+                first_name = dialogue.user_info.get('first_name')
+                last_name = dialogue.user_info.get('last_name')
+
+                if username:
+                    f.write(f"Username: @{username}\n")
+                if first_name or last_name:
+                    name = f"{first_name or ''} {last_name or ''}".strip()
+                    if name:
+                        f.write(f"Имя: {name}\n")
 
                 if dialogue.user_info.get('created_at'):
                     created = dialogue.user_info['created_at']
                     if isinstance(created, str):
                         created = created[:19]
-                    dialogue_text += f"  • Зарегистрирован: {created}\n"
+                    f.write(f"Зарегистрирован: {created}\n")
 
-            dialogue_text += f"📊 СТАТИСТИКА ДИАЛОГА:\n"
-            dialogue_text += f"  • Всего сообщений: {dialogue.total_messages}\n"
-            dialogue_text += f"  • Первое сообщение: {dialogue.first_message_date}\n"
-            dialogue_text += f"  • Последнее сообщение: {dialogue.last_message_date}\n"
+                f.write("\n")
+
+            # Статистика диалога
+            f.write("📊 СТАТИСТИКА ДИАЛОГА:\n")
+            f.write("-" * 40 + "\n")
+            f.write(f"Всего сообщений: {dialogue.total_messages}\n")
+            f.write(f"Дата первого сообщения: {dialogue.first_message_date}\n")
+            f.write(f"Дата последнего сообщения: {dialogue.last_message_date}\n")
 
             if dialogue.last_message_date and dialogue.first_message_date:
                 duration = dialogue.last_message_date - dialogue.first_message_date
-                dialogue_text += f"  • Длительность диалога: {duration.days} дней\n"
+                f.write(f"Длительность общения: {duration.days} дней\n")
 
-            dialogue_text += f"\n{'─' * 80}\n"
-            dialogue_text += "💬 ПОЛНЫЙ ДИАЛОГ:\n"
-            dialogue_text += f"{'─' * 80}\n\n"
+            f.write("\n" + "=" * 60 + "\n\n")
+            f.write("💬 ПОЛНЫЙ ТЕКСТ ДИАЛОГА:\n\n")
 
-            # Включаем ВСЕ сообщения
+            # Все сообщения диалога
             for i, msg in enumerate(dialogue.messages, 1):
                 timestamp_str = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+
                 if msg.role == 'user':
-                    dialogue_text += f"[{timestamp_str}] 👤 ПОЛЬЗОВАТЕЛЬ:\n{msg.content}\n\n"
+                    f.write(f"[{timestamp_str}] 👤 ПОЛЬЗОВАТЕЛЬ:\n")
                 else:
-                    dialogue_text += f"[{timestamp_str}] 🤖 {character.name.upper()}:\n{msg.content}\n\n"
-                    dialogue_text += f"{'─' * 40}\n\n"
+                    f.write(f"[{timestamp_str}] 🤖 {character.name.upper()}:\n")
 
-            dialogue_text += f"✅ КОНЕЦ ДИАЛОГА #{dialogue_index}"
-            all_dialogues_text.append(dialogue_text)
+                # Разбиваем длинные сообщения на строки
+                lines = msg.content.split('\n')
+                for line in lines:
+                    if line.strip():
+                        f.write(f"  {line}\n")
+                    else:
+                        f.write("\n")
 
-        # Формируем полный промпт
-        prompt = f"""
-# 🤖 ПОЛНЫЙ АНАЛИЗ ДИАЛОГОВ ПЕРСОНАЖА: {character.name}
+                f.write("\n")
+                f.write("-" * 40 + "\n\n")
 
-## 📋 ТЕКУЩИЙ ПРОМПТ ПЕРСОНАЖА:
-{character.system_prompt}
+            # Итог
+            f.write(f"✅ КОНЕЦ ДИАЛОГА #{dialogue_index}\n")
+            f.write(f"Всего сообщений: {dialogue.total_messages}\n")
 
-## 📝 ОПИСАНИЕ ПЕРСОНАЖА:
-{character.description}
+        return filename
 
-## 📊 ПОЛНАЯ СТАТИСТИКА:
-- Всего пользователей, общавшихся с персонажем: {total_users}
-- Всего сообщений в диалогах: {total_messages}
-- Среднее количество сообщений на пользователя: {avg_messages_per_user:.1f}
-- Экспорт выполнен: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+    def export_current_prompt(self, character: CharacterInfo, character_dir: Path):
+        """Экспортировать текущий промпт персонажа"""
+        prompt_file = character_dir / "current_prompt.txt"
 
-## 🎯 ЗАДАНИЕ ДЛЯ AI-АНАЛИТИКА:
-Перед вами ВСЕ диалоги пользователей с персонажем "{character.name}". 
-Ваша задача — провести глубокий анализ и предложить конкретные улучшения промпта.
+        with open(prompt_file, 'w', encoding='utf-8') as f:
+            f.write(f"# ТЕКУЩИЙ ПРОМПТ ПЕРСОНАЖА: {character.name}\n")
+            f.write(f"# Экспорт: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("=" * 60 + "\n\n")
+            f.write(character.system_prompt)
 
-### Что анализировать:
-1. 🗣️ **Стиль общения пользователей:**
-   - Как начинают диалоги?
-   - Какие темы поднимают?
-   - Какие эмоции выражают?
-   - Как реагируют на ответы персонажа?
+        print(f"  📄 Сохранен текущий промпт: current_prompt.txt")
 
-2. 🤖 **Эффективность текущего промпта:**
-   - Насколько ответы соответствуют ожиданиям пользователей?
-   - Есть ли шаблонные/повторяющиеся ответы?
-   - Где персонаж теряет контекст?
-   - Какие моменты пользователи ценят больше всего?
+    def export_statistics(self, character: CharacterInfo, dialogues: List[UserDialogue], character_dir: Path):
+        """Экспортировать статистику по диалогам"""
 
-3. 💡 **Потенциал для улучшения:**
-   - Какие аспекты личности персонажа "работают" лучше всего?
-   - Что пользователи ожидают, но не получают?
-   - Где можно добавить больше персонализации?
-   - Как улучшить эмоциональный интеллект персонажа?
-
-4. 🔄 **Конкретные предложения:**
-   - Какие фразы/реакции добавить в промпт?
-   - Что убрать или изменить?
-   - Как лучше обрабатывать частые темы?
-   - Как улучшить удержание контекста?
-
-## 📁 ВСЕ ДИАЛОГИ ПОЛЬЗОВАТЕЛЕЙ:
-{''.join(all_dialogues_text)}
-
-## 📝 ФОРМАТ ОТВЕТА ДЛЯ УЛУЧШЕНИЯ ПРОМПТА:
-
-### 1. КРАТКИЙ АНАЛИЗ (максимум 500 слов):
-- Основные выводы по всем диалогам
-- Сильные стороны текущего промпта
-- Ключевые проблемы и упущения
-
-### 2. ТОП-10 КОНКРЕТНЫХ УЛУЧШЕНИЙ:
-1. [Конкретное изменение 1]
-2. [Конкретное изменение 2]
-...
-10. [Конкретное изменение 10]
-
-### 3. ОБНОВЛЕННЫЙ ПРОМПТ ПЕРСОНАЖА:
-[Полный текст нового промпта с ВСЕМИ улучшениями]
-
-### 4. КОММЕНТАРИИ К ИЗМЕНЕНИЯМ:
-- Почему именно эти изменения?
-- Как они улучшат взаимодействие?
-- Что мы ожидаем от новых реакций?
-
-### 5. МЕТРИКИ УСПЕХА:
-- Как проверить эффективность изменений?
-- На что обращать внимание в будущих диалогах?
-- Ключевые индикаторы улучшения
-
-{'=' * 80}
-🚀 НАЧИНАЙТЕ АНАЛИЗ! УЧТИТЕ ВСЕ ДИАЛОГИ И ВСЕ СООБЩЕНИЯ ВЫШЕ!
-{'=' * 80}
-"""
-        return prompt
-
-    def export_detailed_dialogues(self, character: CharacterInfo, dialogues: List[UserDialogue], character_dir: Path):
-        """Экспорт детальных диалогов в отдельные файлы"""
-        dialogues_dir = character_dir / "detailed_dialogues"
-        dialogues_dir.mkdir(exist_ok=True)
+        total_messages = sum(len(d.messages) for d in dialogues)
+        message_lengths = []
+        user_message_counts = []
 
         for dialogue in dialogues:
-            filename = f"user_{dialogue.user_id}_dialog.txt"
-            filepath = dialogues_dir / filename
+            user_message_counts.append(len(dialogue.messages))
+            for msg in dialogue.messages:
+                message_lengths.append(len(msg.content))
 
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(f"Диалог с пользователем ID: {dialogue.user_id}\n")
-                f.write(f"Персонаж: {character.name}\n")
-                f.write(f"Экспорт: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write("=" * 80 + "\n\n")
+        avg_message_length = sum(message_lengths) / len(message_lengths) if message_lengths else 0
 
-                if dialogue.user_info:
-                    f.write("👤 ИНФОРМАЦИЯ О ПОЛЬЗОВАТЕЛЕ:\n")
-                    f.write("-" * 40 + "\n")
-                    f.write(f"ID: {dialogue.user_id}\n")
-
-                    username = dialogue.user_info.get('username')
-                    if username:
-                        f.write(f"Username: @{username}\n")
-
-                    first_name = dialogue.user_info.get('first_name')
-                    last_name = dialogue.user_info.get('last_name')
-                    if first_name or last_name:
-                        f.write(f"Имя: {first_name or ''} {last_name or ''}\n".strip() + "\n")
-
-                    if dialogue.user_info.get('created_at'):
-                        created = dialogue.user_info['created_at']
-                        if isinstance(created, str):
-                            created = created[:19]
-                        f.write(f"Зарегистрирован: {created}\n")
-
-                    if dialogue.user_info.get('last_seen'):
-                        last_seen = dialogue.user_info['last_seen']
-                        if isinstance(last_seen, str):
-                            last_seen = last_seen[:19]
-                        f.write(f"Последняя активность: {last_seen}\n")
-
-                    f.write(f"Администратор: {'Да' if dialogue.user_info.get('is_admin') else 'Нет'}\n")
-                    f.write(f"Заблокирован: {'Да' if dialogue.user_info.get('is_blocked') else 'Нет'}\n")
-                    f.write("\n")
-
-                f.write("📊 СТАТИСТИКА ДИАЛОГА:\n")
-                f.write("-" * 40 + "\n")
-                f.write(f"Всего сообщений: {dialogue.total_messages}\n")
-                f.write(f"Первое сообщение: {dialogue.first_message_date}\n")
-                f.write(f"Последнее сообщение: {dialogue.last_message_date}\n")
-
-                if dialogue.last_message_date and dialogue.first_message_date:
-                    duration = dialogue.last_message_date - dialogue.first_message_date
-                    f.write(f"Длительность диалога: {duration.days} дней\n")
-
-                f.write("\n" + "=" * 80 + "\n\n")
-                f.write("💬 ПОЛНЫЙ ДИАЛОГ:\n\n")
-
-                # Записываем ВСЕ сообщения
-                for i, msg in enumerate(dialogue.messages, 1):
-                    timestamp_str = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-                    if msg.role == 'user':
-                        f.write(f"[{timestamp_str}] 👤 ПОЛЬЗОВАТЕЛЬ:\n{msg.content}\n\n")
-                    else:
-                        f.write(f"[{timestamp_str}] 🤖 {character.name.upper()}:\n{msg.content}\n\n")
-                        f.write("-" * 40 + "\n\n")
-
-        print(f"  📄 Сохранено детальных диалогов: {len(dialogues)}")
-
-    def export_statistics(self, character_data: Dict, character_dir: Path):
-        """Экспорт подробной статистики по персонажу"""
-        character = character_data['character']
-        dialogues = character_data['dialogues']
-
-        # Подробная статистика
-        user_message_counts = [len(d.messages) for d in dialogues]
-
-        stats = {
-            'character_id': character.id,
-            'character_name': character.name,
-            'character_description': character.description[:500] + "..." if len(
-                character.description) > 500 else character.description,
-            'total_users': len(dialogues),
-            'total_messages': sum(user_message_counts),
-            'avg_messages_per_user': sum(user_message_counts) / len(dialogues) if dialogues else 0,
-            'max_messages_per_user': max(user_message_counts) if user_message_counts else 0,
-            'min_messages_per_user': min(user_message_counts) if user_message_counts else 0,
-            'active_period': {
-                'earliest_date': min(d.first_message_date for d in dialogues) if dialogues else None,
-                'latest_date': max(d.last_message_date for d in dialogues) if dialogues else None,
-                'days_active': (max(d.last_message_date for d in dialogues) - min(
-                    d.first_message_date for d in dialogues)).days if dialogues and len(dialogues) > 1 else 0
-            },
-            'user_distribution': {
-                '1-5 сообщений': len([d for d in dialogues if 1 <= len(d.messages) <= 5]),
-                '6-20 сообщений': len([d for d in dialogues if 6 <= len(d.messages) <= 20]),
-                '21-50 сообщений': len([d for d in dialogues if 21 <= len(d.messages) <= 50]),
-                '51-100 сообщений': len([d for d in dialogues if 51 <= len(d.messages) <= 100]),
-                '101-500 сообщений': len([d for d in dialogues if 101 <= len(d.messages) <= 500]),
-                '500+ сообщений': len([d for d in dialogues if len(d.messages) > 500]),
-            },
-            'top_users_by_messages': [
-                {
-                    'user_id': d.user_id,
-                    'message_count': len(d.messages),
-                    'first_message': d.first_message_date,
-                    'last_message': d.last_message_date
-                }
-                for d in sorted(dialogues, key=lambda x: len(x.messages), reverse=True)[:10]
-            ],
-            'export_date': datetime.now().isoformat(),
-            'export_timestamp': datetime.now().timestamp()
+        # Группируем по активности
+        activity_groups = {
+            "1-5 сообщений": 0,
+            "6-20 сообщений": 0,
+            "21-50 сообщений": 0,
+            "51-100 сообщений": 0,
+            "101+ сообщений": 0,
         }
 
-        # Сохраняем в JSON
-        json_path = character_dir / "statistics.json"
-        with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump(stats, f, ensure_ascii=False, indent=2, default=str)
+        for count in user_message_counts:
+            if count <= 5:
+                activity_groups["1-5 сообщений"] += 1
+            elif count <= 20:
+                activity_groups["6-20 сообщений"] += 1
+            elif count <= 50:
+                activity_groups["21-50 сообщений"] += 1
+            elif count <= 100:
+                activity_groups["51-100 сообщений"] += 1
+            else:
+                activity_groups["101+ сообщений"] += 1
 
-        # Сохраняем в читаемом текстовом формате
-        txt_path = character_dir / "statistics.txt"
-        with open(txt_path, 'w', encoding='utf-8') as f:
-            f.write(f"📊 ПОЛНАЯ СТАТИСТИКА ПЕРСОНАЖА: {character.name}\n")
+        # Топ активных пользователей
+        top_users = sorted(
+            [(d.user_id, len(d.messages), d.first_message_date, d.last_message_date)
+             for d in dialogues],
+            key=lambda x: x[1],
+            reverse=True
+        )[:10]
+
+        # Сохраняем в читаемом формате
+        stats_file = character_dir / "statistics.txt"
+
+        with open(stats_file, 'w', encoding='utf-8') as f:
+            f.write(f"📊 СТАТИСТИКА ПО ДИАЛОГАМ: {character.name}\n")
             f.write("=" * 60 + "\n\n")
 
             f.write("📈 ОСНОВНЫЕ МЕТРИКИ:\n")
-            f.write(f"• Всего пользователей: {stats['total_users']}\n")
-            f.write(f"• Всего сообщений: {stats['total_messages']}\n")
-            f.write(f"• Среднее сообщений на пользователя: {stats['avg_messages_per_user']:.1f}\n")
-            f.write(f"• Максимум сообщений от одного пользователя: {stats['max_messages_per_user']}\n")
-            f.write(f"• Минимум сообщений от одного пользователя: {stats['min_messages_per_user']}\n\n")
+            f.write("-" * 40 + "\n")
+            f.write(f"Всего пользователей: {len(dialogues)}\n")
+            f.write(f"Всего сообщений: {total_messages}\n")
+            f.write(f"Среднее сообщений на пользователя: {total_messages / len(dialogues):.1f}\n")
+            f.write(f"Средняя длина сообщения: {avg_message_length:.0f} символов\n\n")
 
             f.write("📅 ПЕРИОД АКТИВНОСТИ:\n")
-            if stats['active_period']['earliest_date']:
-                f.write(f"• Первое сообщение: {stats['active_period']['earliest_date']}\n")
-                f.write(f"• Последнее сообщение: {stats['active_period']['latest_date']}\n")
-                f.write(f"• Дней активности: {stats['active_period']['days_active']}\n\n")
+            f.write("-" * 40 + "\n")
+            if dialogues:
+                first_date = min(d.first_message_date for d in dialogues)
+                last_date = max(d.last_message_date for d in dialogues)
+                days_active = (last_date - first_date).days if last_date > first_date else 0
+                f.write(f"Первое сообщение: {first_date}\n")
+                f.write(f"Последнее сообщение: {last_date}\n")
+                f.write(f"Период активности: {days_active} дней\n\n")
 
-            f.write("👥 РАСПРЕДЕЛЕНИЕ ПОЛЬЗОВАТЕЛЕЙ ПО АКТИВНОСТИ:\n")
-            for category, count in stats['user_distribution'].items():
-                percentage = (count / stats['total_users'] * 100) if stats['total_users'] > 0 else 0
-                f.write(f"• {category}: {count} пользователей ({percentage:.1f}%)\n")
+            f.write("👥 РАСПРЕДЕЛЕНИЕ ПО АКТИВНОСТИ:\n")
+            f.write("-" * 40 + "\n")
+            for group, count in activity_groups.items():
+                if count > 0:
+                    percentage = (count / len(dialogues)) * 100
+                    f.write(f"{group:20} - {count:3} пользователей ({percentage:5.1f}%)\n")
             f.write("\n")
 
             f.write("🏆 ТОП-10 САМЫХ АКТИВНЫХ ПОЛЬЗОВАТЕЛЕЙ:\n")
-            for i, user in enumerate(stats['top_users_by_messages'], 1):
-                f.write(f"{i}. ID {user['user_id']}: {user['message_count']} сообщений "
-                        f"(с {user['first_message'].strftime('%Y-%m-%d')} по {user['last_message'].strftime('%Y-%m-%d')})\n")
-
-        print(f"  📊 Сохранена подробная статистика")
-
-    def export_character_info(self, character: CharacterInfo, character_dir: Path):
-        """Экспорт полной информации о персонаже"""
-        info_file = character_dir / "character_info.txt"
-
-        with open(info_file, 'w', encoding='utf-8') as f:
-            f.write(f"🤖 ПОЛНАЯ ИНФОРМАЦИЯ О ПЕРСОНАЖЕ\n")
-            f.write("=" * 60 + "\n\n")
-
-            f.write(f"Имя: {character.name}\n")
-            f.write(f"ID: {character.id}\n")
-            f.write(f"Статус: {'Активен' if character.is_active else 'Неактивен'}\n")
-            f.write(f"Тип аватара: {character.avatar_mime_type}\n\n")
-
-            f.write("📝 ОПИСАНИЕ ПЕРСОНАЖА:\n")
             f.write("-" * 40 + "\n")
-            f.write(f"{character.description}\n\n")
+            for i, (user_id, msg_count, first_date, last_date) in enumerate(top_users, 1):
+                duration_days = (last_date - first_date).days if last_date > first_date else 0
+                f.write(f"{i:2}. ID {user_id:10} - {msg_count:4} сообщений за {duration_days:3} дней\n")
 
-            f.write("🎭 ТЕКУЩИЙ СИСТЕМНЫЙ ПРОМПТ:\n")
+            f.write(f"\n📁 ФАЙЛЫ С ДИАЛОГАМИ:\n")
             f.write("-" * 40 + "\n")
-            f.write(f"{character.system_prompt}\n")
+            for i in range(len(dialogues)):
+                f.write(f"dialogue_{i + 1:03d}_user_{dialogues[i].user_id}.txt\n")
 
-        # Сохраняем промпт отдельно для удобства
-        prompt_file = character_dir / "current_system_prompt.txt"
-        with open(prompt_file, 'w', encoding='utf-8') as f:
-            f.write(character.system_prompt)
-
-    def export_conversations(self, all_conversations: Dict[int, Dict], global_stats: Dict):
-        """Основной метод экспорта ВСЕХ диалогов"""
-
-        summary = {
-            'total_characters': len(all_conversations),
-            'total_dialogues': sum(data['total_dialogues'] for data in all_conversations.values()),
-            'total_messages': sum(data['total_messages'] for data in all_conversations.values()),
-            'export_date': datetime.now().isoformat(),
-            'global_stats': global_stats
+        # Также сохраняем в JSON для машинного чтения
+        json_stats = {
+            "character_name": character.name,
+            "total_users": len(dialogues),
+            "total_messages": total_messages,
+            "avg_messages_per_user": total_messages / len(dialogues) if dialogues else 0,
+            "avg_message_length": avg_message_length,
+            "activity_groups": activity_groups,
+            "top_users": [
+                {
+                    "user_id": user_id,
+                    "message_count": msg_count,
+                    "first_message": first_date.isoformat(),
+                    "last_message": last_date.isoformat()
+                }
+                for user_id, msg_count, first_date, last_date in top_users
+            ],
+            "export_date": datetime.now().isoformat()
         }
 
-        print("\n" + "=" * 80)
-        print("📈 ПОЛНАЯ СТАТИСТИКА ЭКСПОРТА:")
-        print(f"   Персонажей: {summary['total_characters']}")
-        print(f"   Диалогов: {summary['total_dialogues']}")
-        print(f"   Сообщений: {summary['total_messages']}")
-        print("=" * 80 + "\n")
+        json_file = character_dir / "statistics.json"
+        with open(json_file, 'w', encoding='utf-8') as f:
+            json.dump(json_stats, f, ensure_ascii=False, indent=2)
 
-        # Сортируем персонажей по количеству сообщений (от большего к меньшему)
+        print(f"  📈 Сохранена статистика: statistics.txt")
+
+    def export_conversations(self, all_conversations: Dict[int, Dict]):
+        """Основной метод экспорта всех диалогов"""
+
+        print("\n" + "=" * 60)
+        print("🚀 НАЧАЛО ЭКСПОРТА ДИАЛОГОВ")
+        print("=" * 60)
+
+        total_dialogues = sum(data['total_dialogues'] for data in all_conversations.values())
+        total_messages = sum(data['total_messages'] for data in all_conversations.values())
+
+        print(f"\n📊 ОБЩАЯ СТАТИСТИКА:")
+        print(f"   Персонажей: {len(all_conversations)}")
+        print(f"   Диалогов: {total_dialogues}")
+        print(f"   Сообщений: {total_messages}")
+
+        # Сортируем персонажей по количеству диалогов
         sorted_characters = sorted(
             all_conversations.items(),
-            key=lambda x: x[1]['total_messages'],
+            key=lambda x: x[1]['total_dialogues'],
             reverse=True
         )
 
@@ -643,7 +643,6 @@ class DialogueAnalyzer:
             print(f"   ID: {character_id}")
             print(f"   Диалогов: {len(dialogues)}")
             print(f"   Сообщений: {sum(len(d.messages) for d in dialogues)}")
-            print(f"   Статус: {'Активен' if character.is_active else 'Неактивен'}")
 
             if not dialogues:
                 print("   ⚠️ Нет диалогов для экспорта")
@@ -654,134 +653,248 @@ class DialogueAnalyzer:
             character_dir = self.output_dir / safe_name
             character_dir.mkdir(exist_ok=True)
 
-            print(f"  📁 Папка: {character_dir.name}")
+            print(f"  📁 Создана папка: {character_dir.name}")
 
-            # Экспортируем информацию о персонаже
-            self.export_character_info(character, character_dir)
+            # 1. Экспортируем текущий промпт
+            self.export_current_prompt(character, character_dir)
 
-            # Экспортируем ВСЕ диалоги в промпт для AI
-            prompt = self.create_analysis_prompt(character, dialogues)
-            prompt_file = character_dir / f"{safe_name}_FULL_ANALYSIS_PROMPT.txt"
+            # 2. Создаем главный файл задачи
+            dialogue_files = self.create_task_file(character, dialogues, character_dir)
 
-            with open(prompt_file, 'w', encoding='utf-8') as f:
-                f.write(prompt)
+            # 3. Экспортируем каждый диалог в отдельный файл
+            print(f"  📄 Экспорт диалогов:")
+            for i, dialogue in enumerate(dialogues, 1):
+                filename = self.export_dialogue_file(character, dialogue, i, character_dir)
+                if i <= 5 or i == len(dialogues):
+                    print(f"    → {filename} ({len(dialogue.messages)} сообщений)")
+                elif i == 6:
+                    print(f"    ... и еще {len(dialogues) - 5} файлов")
 
-            print(f"  🤖 Создан ПОЛНЫЙ промпт для анализа AI ({len(prompt):,} символов)")
+            # 4. Экспортируем статистику
+            self.export_statistics(character, dialogues, character_dir)
 
-            # Экспортируем детальные диалоги в отдельные файлы
-            self.export_detailed_dialogues(character, dialogues, character_dir)
+            # 5. Создаем инструкцию по использованию
+            self.create_usage_guide(character, len(dialogues), character_dir)
 
-            # Экспортируем статистику
-            self.export_statistics(character_data, character_dir)
+        # Создаем общий отчет
+        self.create_global_report(all_conversations)
 
-            # Создаем краткий сводный файл
-            summary_file = character_dir / "QUICK_SUMMARY.txt"
-            with open(summary_file, 'w', encoding='utf-8') as f:
-                f.write(f"📋 БЫСТРЫЙ ОБЗОР: {character.name}\n")
-                f.write("=" * 50 + "\n\n")
-                f.write(f"Диалогов: {len(dialogues)}\n")
-                f.write(f"Сообщений: {sum(len(d.messages) for d in dialogues)}\n")
-                f.write(f"Пользователей: {len(dialogues)}\n")
-                f.write(f"Экспортировано: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-                f.write("📁 СОДЕРЖАНИЕ ПАПКИ:\n")
-                f.write("-" * 40 + "\n")
-                f.write("1. character_info.txt - Полная информация о персонаже\n")
-                f.write("2. current_system_prompt.txt - Текущий промпт\n")
-                f.write(f"3. {safe_name}_FULL_ANALYSIS_PROMPT.txt - Промпт для AI анализа\n")
-                f.write("4. statistics.json/txt - Подробная статистика\n")
-                f.write("5. detailed_dialogues/ - Папка с полными диалогами\n")
-                f.write("6. QUICK_SUMMARY.txt - Этот файл\n")
+        print(f"\n" + "=" * 60)
+        print("✅ ЭКСПОРТ УСПЕШНО ЗАВЕРШЕН!")
+        print("=" * 60)
+        print(f"\n📁 Все файлы сохранены в: {self.output_dir.absolute()}")
+        print("\n🎯 КАК ИСПОЛЬЗОВАТЬ:")
+        print("1. Выберите папку с нужным персонажем")
+        print("2. Прочитайте файл TASK.txt - это главная задача для AI")
+        print("3. Передайте AI:")
+        print("   - Файл TASK.txt (инструкция)")
+        print("   - Файл current_prompt.txt (текущий промпт)")
+        print("   - Все файлы dialogue_*.txt (диалоги)")
+        print("4. Получите анализ и улучшения промпта")
+        print("\n💡 СОВЕТ: Используйте Claude (100K контекст) или GPT-4 с загрузкой файлов")
 
-        # Сохраняем общую статистику
-        summary_file = self.output_dir / "FULL_EXPORT_SUMMARY.json"
-        with open(summary_file, 'w', encoding='utf-8') as f:
-            json.dump(summary, f, ensure_ascii=False, indent=2, default=str)
+    def create_usage_guide(self, character: CharacterInfo, num_dialogues: int, character_dir: Path):
+        """Создать инструкцию по использованию файлов"""
+        guide_content = f"""# 📖 ИНСТРУКЦИЯ ПО ИСПОЛЬЗОВАНИЮ ФАЙЛОВ
 
-        # Создаем читаемый отчет
-        report_file = self.output_dir / "EXPORT_REPORT.txt"
+        ## 🎯 ЦЕЛЬ ЭКСПОРТА
+        Эти файлы созданы для анализа диалогов пользователей с персонажем "{character.name}" 
+        и последующего улучшения его промпта.
+
+        ## 📁 СОДЕРЖАНИЕ ПАПКИ
+
+        ### ОСНОВНЫЕ ФАЙЛЫ:
+        1. **`TASK.txt`** - Главная задача для AI-аналитика
+        2. **`current_prompt.txt`** - Текущий промпт персонажа
+        3. **`statistics.txt`** - Статистика по всем диалогам
+        4. **`statistics.json`** - Статистика в JSON формате
+        5. **`USAGE_GUIDE.txt`** - Этот файл
+
+        ### ФАЙЛЫ С ДИАЛОГАМИ:
+        Всего: {num_dialogues} файлов
+
+        Имена файлов: `dialogue_001_user_XXXXX.txt` ... `dialogue_{num_dialogues:03d}_user_XXXXX.txt`
+
+        Каждый файл содержит полный диалог одного пользователя с персонажем.
+
+        ## 🚀 КАК ПЕРЕДАТЬ AI ДЛЯ АНАЛИЗА
+
+        ### ВАРИАНТ 1: Claude (Anthropic) - РЕКОМЕНДУЕМЫЙ
+        Claude поддерживает большие контексты (до 100K токенов) и хорошо работает с файлами.
+
+        **Как использовать:**
+        1. Загрузите ВСЕ файлы в Claude
+        2. Скажите: "Прочитай файл TASK.txt и выполни задание"
+        3. Claude прочитает все файлы и даст развернутый анализ
+
+        ### ВАРИАНТ 2: ChatGPT/GPT-4 с загрузкой файлов
+        **Как использовать:**
+        1. Загрузите файлы по одному или архивом
+        2. Начните с: "Прочитай файл TASK.txt - это инструкция"
+        3. Затем: "Вот диалоги пользователей: [перечисли файлы]"
+        4. Попросите проанализировать и улучшить промпт
+
+        ### ВАРИАНТ 3: Локальная модель (Ollama, Llama)
+        **Как использовать:**
+        1. Объедините содержимое ключевых файлов:
+        cat TASK.txt current_prompt.txt statistics.txt > combined.txt
+        2. Добавьте несколько примеров диалогов
+        3. Передайте объединенный файл модели
+
+        ## 📊 ЧТО АНАЛИЗИРОВАТЬ
+
+        ### ОБЯЗАТЕЛЬНО:
+        1. **Прочитать `TASK.txt`** - полная инструкция
+        2. **Прочитать `current_prompt.txt`** - текущий промпт
+        3. **Прочитать ВСЕ диалоги** - каждый файл содержит уникальный опыт
+
+        ### РЕКОМЕНДУЕМАЯ ПОСЛЕДОВАТЕЛЬНОСТЬ:
+        1. Начните с `TASK.txt` - поймите задачу
+        2. Прочитайте `current_prompt.txt` - поймите текущее состояние
+        3. Изучите `statistics.txt` - общая картина
+        4. Читайте диалоги по порядку или выборочно
+        5. Сделайте выводы и предложите улучшения
+
+        ## 💡 СОВЕТЫ ПО АНАЛИЗУ
+
+        1. **Обращайте внимание на паттерны** - что повторяется в диалогах
+        2. **Ищите "боли" пользователей** - что не получается у персонажа
+        3. **Отмечайте успехи** - что хорошо работает
+        4. **Учитывайте контекст** - Telegram, неформальное общение
+        5. **Будьте конкретны** - предлагайте конкретные формулировки для промпта
+
+        ## ⚠️ ВАЖНЫЕ ЗАМЕЧАНИЯ
+
+        - **НЕ пропускайте диалоги** - каждый файл содержит ценный опыт
+        - **НЕ меняйте структуру файлов** - она оптимизирована для анализа
+        - **НЕ удаляйте метаданные** - даты, ID пользователей важны для контекста
+        - **ДА, нужно читать всё** - даже короткие диалоги могут содержать инсайты
+
+        ## 🎭 О ПЕРСОНАЖЕ
+
+        **Имя:** {character.name}
+        **Описание:** {character.description[:200]}...
+
+        ## 📅 ИНФОРМАЦИЯ ОБ ЭКСПОРТЕ
+        - Дата экспорта: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        - Всего диалогов: {num_dialogues}
+        - Папка: {character_dir.name}
+
+        Удачи в анализе! Ваша работа сделает персонажа лучше для тысяч пользователей.
+        """
+
+        guide_file = character_dir / "USAGE_GUIDE.txt"
+        with open(guide_file, 'w', encoding='utf-8') as f:
+            f.write(guide_content)
+
+    def create_global_report(self, all_conversations: Dict[int, Dict]):
+        """Создать общий отчет по всем персонажам"""
+
+        report_file = self.output_dir / "GLOBAL_REPORT.txt"
+
         with open(report_file, 'w', encoding='utf-8') as f:
-            f.write("📊 ОТЧЕТ ОБ ЭКСПОРТЕ ВСЕХ ДИАЛОГОВ\n")
+            f.write("# 📊 ГЛОБАЛЬНЫЙ ОТЧЕТ ПО ЭКСПОРТУ ДИАЛОГОВ\n")
             f.write("=" * 60 + "\n\n")
-            f.write(f"Дата экспорта: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
 
-            f.write("📈 ОБЩАЯ СТАТИСТИКА:\n")
-            f.write(f"• Всего персонажей: {summary['total_characters']}\n")
-            f.write(f"• Всего диалогов: {summary['total_dialogues']}\n")
-            f.write(f"• Всего сообщений: {summary['total_messages']:,}\n\n")
+            f.write(f"Дата экспорта: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Всего персонажей: {len(all_conversations)}\n\n")
 
-            f.write("👥 СТАТИСТИКА ПО ПЕРСОНАЖАМ:\n")
+            f.write("## 📈 СТАТИСТИКА ПО ПЕРСОНАЖАМ:\n")
             f.write("-" * 40 + "\n")
 
-            for character_id, character_data in sorted_characters:
-                character = character_data['character']
-                f.write(f"\n🎭 {character.name}:\n")
-                f.write(f"  • Диалогов: {character_data['total_dialogues']}\n")
-                f.write(f"  • Сообщений: {character_data['total_messages']}\n")
-                f.write(
-                    f"  • Среднее на диалог: {character_data['total_messages'] / character_data['total_dialogues']:.1f}\n")
+            # Сортируем по количеству диалогов
+            sorted_data = sorted(
+                [(data['character'].name, data['total_dialogues'], data['total_messages'])
+                 for data in all_conversations.values()],
+                key=lambda x: x[1],
+                reverse=True
+            )
 
-            f.write(f"\n\n📁 СТРУКТУРА ЭКСПОРТА:\n")
-            f.write(f"Корневая папка: {self.output_dir.absolute()}\n")
-            f.write(f"Для каждого персонажа создана отдельная папка с:\n")
-            f.write("1. Полным промптом для AI анализа\n")
-            f.write("2. Всеми диалогами в отдельных файлах\n")
-            f.write("3. Подробной статистикой\n")
-            f.write("4. Информацией о персонаже\n\n")
+            for name, dialogues, messages in sorted_data:
+                avg = messages / dialogues if dialogues > 0 else 0
+                f.write(f"\n🎭 {name}:\n")
+                f.write(f"  • Диалогов: {dialogues}\n")
+                f.write(f"  • Сообщений: {messages:,}\n")
+                f.write(f"  • Среднее на диалог: {avg:.1f}\n")
 
-            f.write("🎯 КАК ИСПОЛЬЗОВАТЬ:\n")
-            f.write("1. Откройте файл [Персонаж]_FULL_ANALYSIS_PROMPT.txt\n")
-            f.write("2. Скопируйте ВЕСЬ текст в ChatGPT/Claude/Gemini\n")
-            f.write("3. Попросите AI проанализировать ВСЕ диалоги\n")
-            f.write("4. Внедрите предложенные улучшения в промпт бота\n")
+            total_dialogues = sum(data['total_dialogues'] for data in all_conversations.values())
+            total_messages = sum(data['total_messages'] for data in all_conversations.values())
 
-        print(f"\n" + "=" * 80)
-        print("✅ ЭКСПОРТ ЗАВЕРШЕН УСПЕШНО!")
-        print(f"📁 Результаты сохранены в: {self.output_dir.absolute()}")
-        print(f"📄 Отчет: {report_file}")
-        print("=" * 80)
-        print("\n🎯 ДАЛЬНЕЙШИЕ ДЕЙСТВИЯ:")
-        print("1. Откройте папку с нужным персонажем")
-        print("2. Найдите файл [Имя]_FULL_ANALYSIS_PROMPT.txt")
-        print("3. Скопируйте ВЕСЬ текст в AI-ассистента")
-        print("4. Получите анализ и улучшения промпта")
-        print("5. Внедрите лучшие предложения в вашего бота\n")
+            f.write(f"\n\n## 📊 ИТОГО:\n")
+            f.write("-" * 40 + "\n")
+            f.write(f"Всего диалогов: {total_dialogues:,}\n")
+            f.write(f"Всего сообщений: {total_messages:,}\n")
+            f.write(f"Среднее сообщений на диалог: {total_messages / total_dialogues:.1f}\n\n")
 
+            f.write("## 🚀 КАК ИСПОЛЬЗОВАТЬ:\n")
+            f.write("-" * 40 + "\n")
+            f.write("1. Выберите папку с нужным персонажем\n")
+            f.write("2. В каждой папке есть:\n")
+            f.write("   • TASK.txt - главная задача для AI\n")
+            f.write("   • current_prompt.txt - текущий промпт\n")
+            f.write("   • statistics.txt - статистика\n")
+            f.write("   • dialogue_*.txt - все диалоги\n")
+            f.write("   • USAGE_GUIDE.txt - инструкция\n")
+            f.write("\n3. Передайте AI файлы в таком порядке:\n")
+            f.write("   1. TASK.txt (инструкция)\n")
+            f.write("   2. current_prompt.txt (что улучшать)\n")
+            f.write("   3. Все файлы dialogue_*.txt (данные для анализа)\n")
+            f.write("\n4. Получите анализ и улучшите промпт!\n")
+
+            f.write("\n## 💡 РЕКОМЕНДАЦИИ:\n")
+            f.write("-" * 40 + "\n")
+            f.write("• Используйте Claude (100K контекст) для лучших результатов\n")
+            f.write("• Анализируйте по одному персонажу за раз\n")
+            f.write("• Сохраняйте оригинальные промпты для сравнения\n")
+            f.write("• Тестируйте улучшения на реальных пользователях\n")
+
+            f.write("\n" + "=" * 60 + "\n")
+            f.write("✅ ЭКСПОРТ ЗАВЕРШЕН УСПЕШНО!\n")
+            f.write("=" * 60 + "\n")
 
 def main():
     """Основная функция скрипта"""
     parser = argparse.ArgumentParser(
-        description='Экспорт ВСЕХ диалогов из базы данных для анализа и улучшения промптов персонажей',
+        description='Экспорт диалогов для анализа промптов с умной структурой',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Примеры использования:
-  python %(prog)s
-  python %(prog)s --output-dir ./analysis_results
-  python %(prog)s --db-host localhost --db-port 5433 --db-name ai-friend
+    Примеры использования:
+    python export_conversations_for_analysis.py
+    python export_conversations_for_analysis.py --output-dir ./analysis
 
-Скрипт экспортирует ВСЕ диалоги БЕЗ ограничений для полного анализа.
-        """
+    Структура экспорта:
+    output_dir/
+     ├── Character_Name/
+     │   ├── TASK.txt                    # Главная задача для AI
+     │   ├── current_prompt.txt          # Текущий промпт
+     │   ├── statistics.txt              # Статистика
+     │   ├── dialogue_001_user_12345.txt # Диалог 1
+     │   ├── dialogue_002_user_67890.txt # Диалог 2
+     │   └── ...                         # Все диалоги
+     ├── Another_Character/
+     │   └── ...                         # Аналогичная структура
+     └── GLOBAL_REPORT.txt               # Общий отчет
+         """
     )
 
     parser.add_argument('--output-dir', type=str, default='./conversation_analysis',
-                        help='Директория для сохранения результатов (по умолчанию: ./conversation_analysis)')
+                        help='Директория для сохранения результатов')
     parser.add_argument('--db-host', type=str, default='localhost',
-                        help='Хост базы данных (по умолчанию: localhost)')
-    parser.add_argument('--db-port', type=int, default=5433,
-                        help='Порт базы данных (по умолчанию: 5433)')
+                        help='Хост базы данных')
+    parser.add_argument('--db-port', type=int, default=15432,
+                        help='Порт базы данных')
     parser.add_argument('--db-name', type=str, default='ai-friend',
-                        help='Имя базы данных (по умолчанию: ai-friend)')
-    parser.add_argument('--db-user', type=str, default='not_postgres',
-                        help='Пользователь базы данных (по умолчанию: not_postgres)')
-    parser.add_argument('--db-password', type=str, default='_koa3f7uN-JLH3x@1vR$',
-                        help='Пароль базы данных (по умолчанию: _koa3f7uN-JLH3x@1vR$)')
+                        help='Имя базы данных')
+    parser.add_argument('--db-user', type=str, default='temporal',
+                        help='Пользователь базы данных')
+    parser.add_argument('--db-password', type=str, default='temporal',
+                        help='Пароль базы данных')
 
     args = parser.parse_args()
 
-    print(f"🚀 ЗАПУСК ЭКСПОРТА ВСЕХ ДИАЛОГОВ...")
+    print(f"🚀 ЗАПУСК УМНОГО ЭКСПОРТА ДИАЛОГОВ...")
     print(f"📁 Выходная директория: {args.output_dir}")
     print(f"🗄️  База данных: {args.db_name}@{args.db_host}:{args.db_port}")
-    print(f"👤 Пользователь БД: {args.db_user}")
-    print(f"⏰ Время начала: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
     try:
@@ -800,22 +913,15 @@ def main():
         if not exporter.connect():
             sys.exit(1)
 
-        # Получение ВСЕХ диалогов
-        print("\n📥 ЗАГРУЗКА ВСЕХ ДАННЫХ ИЗ БАЗЫ...")
-
-        # Сначала получаем общую статистику
-        print("📊 Получение общей статистики...")
-        global_stats = exporter.get_character_statistics()
-
-        # Получаем ВСЕ диалоги
-        print("💬 Загрузка ВСЕХ диалогов...")
+        # Получение всех диалогов
+        print("\n📥 ЗАГРУЗКА ДАННЫХ ИЗ БАЗЫ...")
         all_conversations = exporter.get_all_conversations()
 
         # Инициализация анализатора
-        analyzer = DialogueAnalyzer(args.output_dir)
+        analyzer = DialogueExporter(args.output_dir)
 
-        # Экспорт ВСЕХ данных
-        analyzer.export_conversations(all_conversations, global_stats)
+        # Экспорт данных
+        analyzer.export_conversations(all_conversations)
 
         # Закрытие соединения
         exporter.disconnect()
@@ -824,11 +930,10 @@ def main():
         print("\n⚠️ Экспорт прерван пользователем")
         sys.exit(0)
     except Exception as e:
-        print(f"\n❌ КРИТИЧЕСКАЯ ОШИБКА ПРИ ЭКСПОРТЕ: {e}")
+        print(f"\n❌ ОШИБКА: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
