@@ -881,7 +881,7 @@ def main():
                         help='Директория для сохранения результатов')
     parser.add_argument('--db-host', type=str, default='localhost',
                         help='Хост базы данных')
-    parser.add_argument('--db-port', type=int, default=5432,
+    parser.add_argument('--db-port', type=int, default=5433,
                         help='Порт базы данных')
     parser.add_argument('--db-name', type=str, default='ai-friend',
                         help='Имя базы данных')
