@@ -881,13 +881,13 @@ def main():
                         help='Директория для сохранения результатов')
     parser.add_argument('--db-host', type=str, default='localhost',
                         help='Хост базы данных')
-    parser.add_argument('--db-port', type=int, default=15432,
+    parser.add_argument('--db-port', type=int, default=5433,
                         help='Порт базы данных')
     parser.add_argument('--db-name', type=str, default='ai-friend',
                         help='Имя базы данных')
-    parser.add_argument('--db-user', type=str, default='temporal',
+    parser.add_argument('--db-user', type=str, default='not_postgres',
                         help='Пользователь базы данных')
-    parser.add_argument('--db-password', type=str, default='temporal',
+    parser.add_argument('--db-password', type=str, default='_koa3f7uN-JLH3x@1vR$',
                         help='Пароль базы данных')
 
     args = parser.parse_args()
