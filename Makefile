@@ -3,8 +3,11 @@
 export DOCKER_API_VERSION=1.44
 
 # Сборка образов
-build:
+build-с:
 	docker compose build --no-cache
+
+build:
+	docker compose build
 
 # Запуск сервисов
 up:
