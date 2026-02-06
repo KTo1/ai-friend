@@ -24,6 +24,8 @@ class UserStatsRepository:
                     total_messages_rejected INTEGER DEFAULT 0,
                     total_rate_limit_hits INTEGER DEFAULT 0,
                     average_message_length FLOAT DEFAULT 0.0,
+                    paywall_reached BOOLEAN DEFAULT FALSE,
+                    paywall_reached_at TIMESTAMP,                    
                     last_message_at TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -41,7 +43,7 @@ class UserStatsRepository:
         result = self.db.fetch_one(
             '''SELECT user_id, total_messages_processed, total_characters_processed,
                       total_messages_rejected, total_rate_limit_hits, average_message_length,
-                      last_message_at, created_at, updated_at
+                      paywall_reached, paywall_reached_at, last_message_at, created_at, updated_at
                FROM user_stats WHERE user_id = %s''',
             (user_id,)
         )
@@ -54,6 +56,8 @@ class UserStatsRepository:
                 total_messages_rejected=result['total_messages_rejected'] or 0,
                 total_rate_limit_hits=result['total_rate_limit_hits'] or 0,
                 average_message_length=result['average_message_length'] or 0.0,
+                paywall_reached=bool(result['paywall_reached']),
+                paywall_reached_at=self._parse_datetime(result['paywall_reached_at']),
                 last_message_at=self._parse_datetime(result['last_message_at']),
                 created_at=self._parse_datetime(result['created_at']),
                 updated_at=self._parse_datetime(result['updated_at'])
@@ -67,14 +71,17 @@ class UserStatsRepository:
                 INSERT INTO user_stats 
                 (user_id, total_messages_processed, total_characters_processed,
                  total_messages_rejected, total_rate_limit_hits, average_message_length,
+                 paywall_reached, paywall_reached_at,
                  last_message_at, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (user_id) DO UPDATE SET
                     total_messages_processed = EXCLUDED.total_messages_processed,
                     total_characters_processed = EXCLUDED.total_characters_processed,
                     total_messages_rejected = EXCLUDED.total_messages_rejected,
                     total_rate_limit_hits = EXCLUDED.total_rate_limit_hits,
                     average_message_length = EXCLUDED.average_message_length,
+                    paywall_reached = EXCLUDED.paywall_reached,
+                    paywall_reached_at = EXCLUDED.paywall_reached_at,
                     last_message_at = EXCLUDED.last_message_at,
                     updated_at = EXCLUDED.updated_at
             ''', (
@@ -84,12 +91,25 @@ class UserStatsRepository:
                 stats.total_messages_rejected,
                 stats.total_rate_limit_hits,
                 stats.average_message_length,
+                stats.paywall_reached,
+                stats.paywall_reached_at,
                 stats.last_message_at,
                 stats.created_at,
                 stats.updated_at
             ))
         except Exception as e:
             self.logger.error(f"Error saving user stats for {stats.user_id}: {e}")
+
+
+    def mark_paywall_reached(self, stats: UserStats) -> bool:
+        try:
+            stats.record_paywall_reached()
+            self.save_user_stats(stats)
+            self.logger.info(f'Marked paywall reached for user {stats.user_id}')
+            return True
+        except Exception as e:
+            self.logger.error(f'Error marking paywall reached for user {stats.user_id}: {e}')
+            return False
 
     def _parse_datetime(self, dt_value) -> datetime:
         """Парсинг datetime"""

@@ -11,7 +11,7 @@ class DatabaseConfig:
 
     @property
     def port(self):
-        return int(os.getenv("DB_PORT", "25432"))
+        return int(os.getenv("DB_PORT", "15432"))
 
     @property
     def name(self):
@@ -19,11 +19,11 @@ class DatabaseConfig:
 
     @property
     def user(self):
-        return os.getenv("DB_USER", "postgres")
+        return os.getenv("DB_USER", "temporal")
 
     @property
     def password(self):
-        return os.getenv("DB_PASSWORD", "")
+        return os.getenv("DB_PASSWORD", "temporal")
 
     @property
     def url(self):

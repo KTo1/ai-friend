@@ -47,7 +47,7 @@ class DeepSeekClient(BaseAIClient, AIClientInterface):
             return self._session
 
     @trace_span("deepseek.generate_response", attributes={"component": "ai"})
-    async def generate_response(self, messages: List[Dict], max_tokens: int = 500, temperature: float = 0.7) -> str:
+    async def generate_response(self, messages: List[Dict], max_tokens: int = 500, temperature: float = 1.7) -> str:
         """Сгенерировать ответ с помощью DeepSeek API"""
 
         if not self.api_key:
@@ -71,7 +71,7 @@ class DeepSeekClient(BaseAIClient, AIClientInterface):
                 "model": self.model,
                 "messages": api_messages,
                 "max_tokens": max_tokens,
-                "temperature": 1.7,
+                "temperature": temperature,
                 "stream": False
             }
 

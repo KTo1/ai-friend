@@ -70,6 +70,9 @@ class MetricsCollector:
             'Total number of Telegram retry attempts'
         )
 
+        # Метрики для аналитики по пользователям (будем использовать Gauge для уникальных значений)
+        self.paywall_user_reached = Gauge('paywall_user_reached', 'Users who reached paywall', ['user_id', 'character_id'])
+
     def start_metrics_server(self):
         """Запустить сервер метрик"""
         if self._server_started:
@@ -131,6 +134,19 @@ class MetricsCollector:
             'retry_attempts': self.telegram_retry_attempts._value.get()
         }
 
+    # Детальная метрика для аналитики по пользователям
+    def record_user_reached_paywall(self, user_id: int, character_id: int):
+        # Устанавливаем 1 для указания, что пользователь достиг paywall
+        # Метрика останется в истории Prometheus
+        self.paywall_user_reached.labels(
+            user_id=str(user_id),
+            character_id=str(character_id)
+        ).set(1)
+        self.logger.info('User reached paywall', extra={
+            'user_id': user_id,
+            'character_id': character_id,
+            'metric_type': 'paywall_user_reached'
+        })
 
 class Timer:
     """Контекстный менеджер для измерения времени"""

@@ -829,9 +829,6 @@ class FriendBot:
     • `/admin_message_stats [user_id]` - статистика сообщений
     • `/admin_user_tariff [user_id]` - тариф пользователя
 
-    💰 **Управление тарифами:**
-    • `/admin_assign_tariff <user_id> <tariff_id> [дней]` - назначить тариф
-
     🚫 **Управление блокировками:**
     • `/admin_block <user_id> [причина]` - заблокировать пользователя
     • `/admin_unblock <user_id>` - разблокировать пользователя
@@ -842,7 +839,6 @@ class FriendBot:
     `/admin_message_stats 123456789` - статистика сообщений
 
     💡 **Примеры использования:**
-    `/admin_assign_tariff 123456789 1 30` - назначить тариф 1 на 30 дней
     `/admin_user_tariff 123456789` - посмотреть тариф пользователя
 
     📊 **Обычные команды (для всех):**
@@ -1023,37 +1019,6 @@ class FriendBot:
         if not success:
             self.logger.error(f"Failed to send health status to user {user_id}")
 
-    async def admin_assign_tariff(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Назначить тариф пользователю"""
-        user_id = update.effective_user.id
-
-        if not self.manage_admin_uc.is_user_admin(user_id):
-            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
-            return
-
-        if len(context.args) < 2:
-            success = await self._safe_reply(update,
-                                             "❌ Использование: /admin_assign_tariff <user_id> <tariff_id> [дней]\n\n"
-                                             "Пример:\n"
-                                             "/admin_assign_tariff 123456789 1\n"
-                                             "/admin_assign_tariff 123456789 2 30\n\n"
-                                             "Используйте /all_tariffs чтобы посмотреть доступные тарифы"
-                                             )
-            return
-
-        try:
-            target_user_id = int(context.args[0])
-            tariff_id = int(context.args[1])
-            duration_days = int(context.args[2]) if len(context.args) > 2 else None
-
-            success, message = self.manage_tariff_uc.assign_tariff_to_user(
-                target_user_id, tariff_id, duration_days
-            )
-            await self._safe_reply(update, message)
-
-        except ValueError:
-            success = await self._safe_reply(update, "❌ Неверный формат параметров")
-
     async def admin_user_tariff(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать тариф пользователя"""
         user_id = update.effective_user.id
@@ -1108,7 +1073,23 @@ class FriendBot:
 
         user_tariff = self.tariff_service.get_user_tariff(user_id)
 
+        if not user_tariff or not user_tariff.tariff_plan:
+            success = await self._safe_reply(update,
+                                             "❌ Не удалось определить ваш тарифный план.\n"
+                                             "Пожалуйста, свяжитесь с администратором.")
+            return
+
         if user_tariff.is_expired():
+            user_stats = self.user_stats_repo.get_user_stats(user_id)
+            if not user_stats or not user_stats.paywall_reached:
+                self.user_stats_repo.mark_paywall_reached(user_stats)
+
+                # Записываем детальную метрику для аналитики
+                metrics_collector.record_user_reached_paywall(
+                    user_id=user_id,
+                    character_id=character.id
+                )
+
             message_paywall = """
             Дорогой друг! Надеюсь, тебе понравилось наше общение за этот день 😊
 
@@ -1123,7 +1104,7 @@ class FriendBot:
 
 Продолжим? Всего 799⭐ в месяц — как пара чашек кофе.
 
-По всем возникающим вопросам пишете в техподдержку: @youraigirls_manager
+Если у вас есть какие-то вопросы или предложения, или вы хотите оставить отзыв, то пишете в техподдержку: @youraigirls_manager
         """
 
             keyboard = []
@@ -1153,12 +1134,6 @@ class FriendBot:
 
             success = await self._safe_reply(update, message_paywall, reply_markup=reply_markup)
 
-            return
-
-        if not user_tariff or not user_tariff.tariff_plan:
-            success = await self._safe_reply(update,
-                                             "❌ Не удалось определить ваш тарифный план.\n"
-                                             "Пожалуйста, свяжитесь с администратором.")
             return
 
         tariff = user_tariff.tariff_plan
@@ -1339,7 +1314,6 @@ class FriendBot:
         self.application.add_handler(CommandHandler("admin_message_stats", self.admin_message_stats))
 
         # Команды управления тарифами
-        self.application.add_handler(CommandHandler("admin_assign_tariff", self.admin_assign_tariff))
         self.application.add_handler(CommandHandler("admin_user_tariff", self.admin_user_tariff))
 
         # Обработчик карусели персонажей

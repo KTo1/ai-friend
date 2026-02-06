@@ -12,6 +12,8 @@ class UserStats:
     total_messages_rejected: int = 0  # Отклонено из-за длины
     total_rate_limit_hits: int = 0  # Попаданий в rate limit
     average_message_length: float = 0.0
+    paywall_reached: bool = False
+    paywall_reached_at: Optional[datetime] = None
     last_message_at: Optional[datetime] = None
     created_at: datetime = None
     updated_at: datetime = None
@@ -39,6 +41,12 @@ class UserStats:
         self.last_message_at = datetime.utcnow()
         self.updated_at = datetime.utcnow()
 
+    def record_paywall_reached(self):
+        if not self.paywall_reached:
+            self.paywall_reached = True
+            self.paywall_reached_at = datetime.utcnow()
+            self.updated_at = datetime.utcnow()
+
     def to_dict(self) -> Dict[str, Any]:
         """Преобразовать в словарь"""
         return {
@@ -48,6 +56,8 @@ class UserStats:
             'total_messages_rejected': self.total_messages_rejected,
             'total_rate_limit_hits': self.total_rate_limit_hits,
             'average_message_length': round(self.average_message_length, 2),
+            'paywall_reached': self.paywall_reached,
+            'paywall_reached_at': self.paywall_reached_at.isoformat() if self.paywall_reached_at else None,
             'last_message_at': self.last_message_at.isoformat() if self.last_message_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
