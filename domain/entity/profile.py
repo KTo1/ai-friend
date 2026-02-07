@@ -10,6 +10,7 @@ class UserProfile:
     age: Optional[int] = None
     interests: Optional[str] = None
     mood: Optional[str] = None
+    gender: Optional[str] = None
     last_active: datetime = None
 
     def __post_init__(self):
@@ -17,7 +18,7 @@ class UserProfile:
             self.last_active = datetime.now()
 
     def update_profile(self, name: Optional[str] = None, age: Optional[int] = None,
-                       interests: Optional[str] = None, mood: Optional[str] = None):
+                       interests: Optional[str] = None, mood: Optional[str] = None, gender: Optional[str] = None):
         if name is not None:
             self.name = name
         if age is not None:
@@ -26,4 +27,7 @@ class UserProfile:
             self.interests = interests
         if mood is not None:
             self.mood = mood
+        if gender is not None:
+            self.gender = gender
+
         self.last_active = datetime.now()

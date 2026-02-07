@@ -1193,7 +1193,7 @@ class FriendBot:
                 character.id,
                 user_message,
                 rag_context,
-                max_context_messages=tariff.message_limits.max_context_messages  # ← лимит из тарифа!
+                max_context_messages=tariff.message_limits.max_context_messages
             )
 
             if not self.manage_admin_uc.is_user_admin(user_id):

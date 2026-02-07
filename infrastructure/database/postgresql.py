@@ -94,6 +94,7 @@ class PostgreSQLDatabase:
                         age INTEGER,
                         interests TEXT,
                         mood TEXT,
+                        gender TEXT,
                         last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')

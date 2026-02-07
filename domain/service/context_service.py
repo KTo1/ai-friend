@@ -1,5 +1,4 @@
 from typing import List, Dict
-from domain.entity.profile import UserProfile
 
 
 class ContextService:

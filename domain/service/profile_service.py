@@ -42,6 +42,7 @@ class ProfileService:
   "age": "Возраст пользователя (integer, null если нет)",
   "interests": "Список интересов (list of strings, [] если нет)",
   "mood": "Настроение пользователя (string, null если нет)"
+  "gender": "Пол пользователя, строго: мужчина или женщина (string, null если нет)"
 }
 
 ПРИМЕРЫ:
@@ -101,7 +102,7 @@ class ProfileService:
         return False
 
     async def extract_profile_info_llm(self, message: str) -> Tuple[
-        Optional[str], Optional[int], Optional[str], Optional[str]]:
+        Optional[str], Optional[int], Optional[str], Optional[str], Optional[str]]:
         """
         Извлечение информации о профиле из сообщения с помощью LLM.
         Возвращает (name, age, interests_str, mood).
@@ -109,7 +110,7 @@ class ProfileService:
 
         # 1. Проверяем, нужно ли вообще запускать LLM
         if not self._message_contains_triggers(message):
-            return None, None, None, None
+            return None, None, None, None, None
 
         # 2. Строим промпт и вызываем LLM
         prompt = self._build_extraction_prompt(message)
@@ -134,6 +135,7 @@ class ProfileService:
             age = data.get('age')
             interests_list = data.get('interests')
             mood = data.get('mood')
+            gender = data.get('gender')
 
             # 4. Форматируем вывод
             interests_str = ", ".join(interests_list) if interests_list else None
@@ -143,17 +145,18 @@ class ProfileService:
                 "extracted_age": str(age) if age is not None else "null",
                 "extracted_mood": mood if mood else "null",
                 "extracted_interests": ", ".join(interests_list) if interests_list else "null",
+                "extracted_gender": gender if gender else "null",
             }
 
             # Логируем успешный парсинг с безопасными строками
             if name or age or interests_str or mood:
                 self.logger.info("LLM extracted profile data", extra=log_data)
 
-            return name, age, interests_str, mood
+            return name, age, interests_str, mood, gender
 
         except Exception as e:
             self.logger.error(
                 f"Failed to parse profile info from LLM response: {e}",
                 extra={"llm_response": response_json_str}
             )
-            return None, None, None, None
+            return None, None, None, None, None

@@ -18,11 +18,11 @@ class ManageProfileUseCase:
     async def extract_and_update_profile(self, user_id: int, message: str) -> tuple:
 
         # 5. Вызываем новый async метод LLM
-        name, age, interests, mood = await self.profile_service.extract_profile_info_llm(message)
+        name, age, interests, mood, gender = await self.profile_service.extract_profile_info_llm(message)
 
         # Если LLM ничего не вернул (не было триггеров или данных), выходим
-        if not any([name, age, interests, mood]):
-            return None, None, None, None
+        if not any([name, age, interests, mood, gender]):
+            return None, None, None, None, None
 
         # 6. Обновляем профиль в базе
         profile = self.profile_repo.get_profile(user_id)
@@ -30,11 +30,12 @@ class ManageProfileUseCase:
             profile = UserProfile(user_id=user_id)
 
         # Сервис `update_profile` в entity обновляет только то, что не None
-        profile.update_profile(name, age, interests, mood)
+        profile.update_profile(name, age, interests, mood, gender)
         self.profile_repo.save_profile(profile)
 
         self.logger.info(
             f"Profile updated for user {user_id}",
-            extra={'user_id': user_id, 'extracted_name': name, 'extracted_age': age, 'extracted_interests': interests, 'extracted_mood': mood}
+            extra={'user_id': user_id, 'extracted_name': name, 'extracted_age': age, 'extracted_interests': interests, 'extracted_mood': mood, 'extracted_gender': gender}
         )
-        return name, age, interests, mood
+
+        return name, age, interests, mood, gender
