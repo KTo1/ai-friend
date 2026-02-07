@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: ${DB_USER:-not_postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-_koa3f7uN-JLH3x@1vR$}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - ./postgres/data:/var/lib/postgresql/data  # ← Храним на хосте!
       - ./postgres/backups:/backups  # ← Папка для бэкапов
@@ -46,7 +46,7 @@ services:
     depends_on:
       - postgres
     ports:
-      - "8001:8000"  # ← ИЗМЕНИЛИ ПОРТ на 8001
+      - "127.0.0.1:8001:8000"  # ← ИЗМЕНИЛИ ПОРТ на 8001
     restart: unless-stopped
     networks:
       - bot-network
