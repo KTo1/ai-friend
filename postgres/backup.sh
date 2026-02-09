@@ -7,7 +7,7 @@ BACKUP_DIR="./backups"
 DATE=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="$BACKUP_DIR/backup_${DATE}.sql"
 echo "💾 Creating PostgreSQL backup: $BACKUP_FILE"
-docker compose exec -T postgres pg_dump -U postgres -d ai-friend --clean --if-exists > "$BACKUP_FILE"
+docker compose exec -T postgres pg_dump -U not_postgres -d ai-friend --clean --if-exists > "$BACKUP_FILE"
 if [ -s "$BACKUP_FILE" ]; then
     BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
     echo "✅ Backup completed: $BACKUP_FILE ($BACKUP_SIZE)"

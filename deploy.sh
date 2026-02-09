@@ -242,7 +242,7 @@ mkdir -p "$BACKUP_DIR"
 
 # Create backup
 log "Creating backup: $BACKUP_FILE"
-if docker compose exec -T postgres pg_dump -U postgres -d ai-friend --verbose > "$BACKUP_DIR/$BACKUP_FILE"; then
+if docker compose exec -T postgres pg_dump -U not_postgres -d ai-friend --verbose > "$BACKUP_DIR/$BACKUP_FILE"; then
     log "Backup created successfully: $BACKUP_FILE"
 
     # Compress backup
@@ -345,15 +345,15 @@ gunzip -c "$SELECTED_BACKUP" > "/tmp/$BACKUP_BASENAME"
 
 # Restore database
 log "Restoring database..."
-if docker compose exec -T postgres psql -U postgres -d ai-friend -f /tmp/$BACKUP_BASENAME > /dev/null 2>&1; then
+if docker compose exec -T postgres psql -U not_postgres -d ai-friend -f /tmp/$BACKUP_BASENAME > /dev/null 2>&1; then
     log "Database restored successfully!"
 else
     # If database doesn't exist, create it first
     log "Creating database..."
-    docker compose exec -T postgres createdb -U postgres ai-friend 2>/dev/null || true
+    docker compose exec -T postgres createdb -U not_postgres ai-friend 2>/dev/null || true
 
     log "Restoring to new database..."
-    docker compose exec -T postgres psql -U postgres -d ai-friend -f /tmp/$BACKUP_BASENAME
+    docker compose exec -T postgres psql -U not_postgres -d ai-friend -f /tmp/$BACKUP_BASENAME
 fi
 
 # Cleanup
@@ -387,7 +387,7 @@ mkdir -p "$BACKUP_DIR"
 
 # Create backup
 log "Starting automatic backup..."
-docker compose exec -T postgres pg_dump -U postgres -d ai-friend | gzip > "$BACKUP_DIR/$BACKUP_FILE"
+docker compose exec -T postgres pg_dump -U not_postgres -d ai-friend | gzip > "$BACKUP_DIR/$BACKUP_FILE"
 
 if [ $? -eq 0 ]; then
     log "Automatic backup successful: $BACKUP_FILE"

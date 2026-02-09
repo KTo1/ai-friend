@@ -24,7 +24,7 @@ if [ "$CONFIRM" != "yes" ]; then
     exit 0
 fi
 echo "🔄 Restoring from: $BACKUP_FILE"
-docker compose exec -T postgres psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS ai-friend;"
-docker compose exec -T postgres psql -U postgres -d postgres -c "CREATE DATABASE ai-friend;"
-docker compose exec -T postgres psql -U postgres -d friend_bot < "$BACKUP_FILE"
+docker compose exec -T postgres psql -U not_postgres -d postgres -c "DROP DATABASE IF EXISTS ai-friend;"
+docker compose exec -T postgres psql -U not_postgres -d postgres -c "CREATE DATABASE ai-friend;"
+docker compose exec -T postgres psql -U not_postgres -d friend_bot < "$BACKUP_FILE"
 echo "✅ Restore completed!"
