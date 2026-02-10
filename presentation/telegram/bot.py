@@ -21,6 +21,7 @@ from infrastructure.database.repositories.rag_repository import RAGRepository
 from infrastructure.database.repositories.user_stats_repository import UserStatsRepository
 from infrastructure.database.repositories.rate_limit_tracking_repository import RateLimitTrackingRepository
 from infrastructure.database.repositories.character_repository import CharacterRepository
+from infrastructure.database.repositories.summary_repository import SummaryRepository
 
 from infrastructure.ai.ai_factory import AIFactory
 from infrastructure.monitoring.logging import setup_logging, StructuredLogger
@@ -37,6 +38,7 @@ from domain.service.block_service import BlockService
 from domain.service.tariff_service import TariffService
 from domain.service.rag_service import RAGService
 from domain.service.limit_service import LimitService
+from domain.service.summary_service import SummaryService
 
 from application.use_case.manage_admin import ManageAdminUseCase
 from application.use_case.manage_block import ManageBlockUseCase
@@ -45,6 +47,7 @@ from application.use_case.manage_tariff import ManageTariffUseCase
 from application.use_case.manage_rag import ManageRAGUseCase
 from application.use_case.check_limits import CheckLimitsUseCase
 from application.use_case.manage_character import ManageCharacterUseCase
+from application.use_case.manage_summary import ManageSummaryUseCase
 
 # Импорты для Telegram rate limiting
 from presentation.telegram.message_sender import get_telegram_sender, get_telegram_rate_limiter
@@ -68,6 +71,7 @@ class FriendBot:
         self.user_stats_repo = UserStatsRepository(self.database)
         self.rate_limit_tracking_repo = RateLimitTrackingRepository(self.database)
         self.character_repo = CharacterRepository(self.database)
+        self.summary_repo = SummaryRepository(self.database)
 
         # Используем фабрику для создания AI клиента!
         self.ai_client = AIFactory.create_client()
@@ -81,6 +85,7 @@ class FriendBot:
             self.rate_limit_tracking_repo,
             self.user_stats_repo
         )
+        self.summary_service = SummaryService(self.ai_client)
 
         self.health_checker = HealthChecker(self.database)
 
@@ -99,6 +104,11 @@ class FriendBot:
         self.manage_rag_uc = ManageRAGUseCase(self.rag_repo, self.rag_service)
         self.check_limits_uc = CheckLimitsUseCase(self.limit_service)
         self.manage_character_uc = ManageCharacterUseCase(self.character_repo, self.user_repo)
+        self.manage_summary_uc = ManageSummaryUseCase(
+            self.summary_repo,
+            self.conversation_repo,
+            self.summary_service
+        )
 
         self.middleware = TelegramMiddleware()
 
@@ -528,6 +538,8 @@ class FriendBot:
             # Очищаем контекст и памяти для текущего персонажа
             self.conversation_repo.clear_conversation(user_id, character.id)
             self.rag_repo.delete_user_memories(user_id, character.id)
+            self.manage_summary_uc.clear_summaries(user_id, character.id)
+
             success = await self._safe_reply(update, f'🧹 Разговор с {character.name} сброшен! Давай начнем заново! Как твои дела?')
         else:
             success = await self._safe_reply(update, '🧹 Давай начнем наш разговор заново! Сначала выбери персонажа с помощью /choose_character')
@@ -1161,27 +1173,31 @@ class FriendBot:
                     self.middleware.create_user_from_telegram(user)
                 )
 
-            rag_enabled = tariff and tariff.is_rag_enabled()
-            rag_context = ""
-            if rag_enabled:
-                # Извлекаем и сохраняем воспоминания (асинхронно)
-                asyncio.create_task(
-                    self.manage_rag_uc.extract_and_save_memories(user.id, character.id, user_message)
+            # Асинхронно запускаем генерацию суммаризаций (не блокируя ответ)
+            asyncio.create_task(
+                self.manage_summary_uc.check_and_update_summaries(
+                    user_id, character.id, character.name
                 )
+            )
 
-                # Получаем релевантные воспоминания для текущего сообщения
-                rag_context = await self.manage_rag_uc.prepare_rag_context(
-                    user.id, character.id, user_message
-                )
+            # Извлекаем и сохраняем воспоминания (асинхронно)
+            asyncio.create_task(
+                self.manage_rag_uc.extract_and_save_memories(user.id, character.id, user_message)
+            )
 
-                self.logger.debug(
-                    "RAG context prepared",
-                    extra={
-                        'user_id': user.id,
-                        'rag_context_length': len(rag_context),
-                        'has_rag_context': bool(rag_context)
-                    }
-                )
+            # Получаем релевантные воспоминания для текущего сообщения
+            rag_context = await self.manage_rag_uc.prepare_rag_context(
+                user.id, character.id, user_message
+            )
+
+            self.logger.debug(
+                "RAG context prepared",
+                extra={
+                    'user_id': user.id,
+                    'rag_context_length': len(rag_context),
+                    'has_rag_context': bool(rag_context)
+                }
+            )
 
             profile_data = await self.manage_profile_uc.extract_and_update_profile(user_id, user_message)
 
