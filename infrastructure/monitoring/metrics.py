@@ -73,6 +73,16 @@ class MetricsCollector:
         # Метрики для аналитики по пользователям (будем использовать Gauge для уникальных значений)
         self.paywall_user_reached = Gauge('paywall_user_reached', 'Users who reached paywall', ['user_id', 'character_id'])
 
+        # Новые метрики для суммаризаций
+        self.summaries_generated = Counter('summaries_generated_total',
+                                          'Total number of summaries generated',
+                                          ['type', 'character'])
+        self.summary_generation_time = Histogram('summary_generation_duration_seconds',
+                                                'Time spent generating summaries',
+                                                ['type'])
+        self.summary_effectiveness = Histogram('summary_effectiveness_ratio',
+                                              'Message compression ratio (messages/summary_tokens)')
+
     def start_metrics_server(self):
         """Запустить сервер метрик"""
         if self._server_started:
@@ -136,8 +146,6 @@ class MetricsCollector:
 
     # Детальная метрика для аналитики по пользователям
     def record_user_reached_paywall(self, user_id: int, character_id: int):
-        # Устанавливаем 1 для указания, что пользователь достиг paywall
-        # Метрика останется в истории Prometheus
         self.paywall_user_reached.labels(
             user_id=str(user_id),
             character_id=str(character_id)
@@ -147,6 +155,18 @@ class MetricsCollector:
             'character_id': character_id,
             'metric_type': 'paywall_user_reached'
         })
+
+    def record_summary_generated(self, summary_type: str, character_id: int,
+                                 message_count: int, token_count: int):
+        self.summaries_generated.labels(type=summary_type, character=str(character_id)).inc()
+
+        if token_count > 0:
+            compression_ratio = message_count / token_count
+            self.summary_effectiveness.observe(compression_ratio)
+
+    def record_summary_generation_time(self, summary_type: str, duration: float):
+        self.summary_generation_time.labels(type=summary_type).observe(duration)
+
 
 class Timer:
     """Контекстный менеджер для измерения времени"""
