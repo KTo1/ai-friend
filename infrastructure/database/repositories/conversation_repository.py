@@ -21,11 +21,11 @@ class ConversationRepository:
             SELECT role, content 
             FROM conversation_context 
             WHERE user_id = %s AND character_id = %s AND deleted_at is NULL
-            ORDER BY timestamp ASC 
+            ORDER BY timestamp DESC 
             LIMIT %s
         ''', (user_id, character_id, max_context_messages))
 
-        return [{'role': row['role'], 'content': row['content']} for row in results]
+        return [{'role': row['role'], 'content': row['content']} for row in reversed(results)]
 
     def get_conversation_count(self, user_id: int, character_id: int) -> int:
         """Получить контекст разговора с учетом лимита"""
