@@ -1190,6 +1190,11 @@ class FriendBot:
                 user.id, character.id, user_message
             )
 
+            # Получаем релевантные воспоминания для текущего сообщения
+            recap_context = self.manage_summary_uc.get_summary_context(
+                user.id, character.id
+            )
+
             self.logger.debug(
                 "RAG context prepared",
                 extra={
@@ -1209,6 +1214,7 @@ class FriendBot:
                 character.id,
                 user_message,
                 rag_context,
+                recap_context,
                 max_context_messages=tariff.message_limits.max_context_messages
             )
 

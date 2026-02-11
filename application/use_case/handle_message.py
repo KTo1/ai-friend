@@ -1,3 +1,4 @@
+import time
 from domain.service.context_service import ContextService
 from domain.interfaces.ai_client import AIClientInterface
 from infrastructure.database.repositories.conversation_repository import ConversationRepository
@@ -17,12 +18,11 @@ class HandleMessageUseCase:
         self.logger = StructuredLogger("handle_message_uc")
 
     @trace_span("usecase.handle_message", attributes={"component": "application"})
-    async def execute(self, user_id: int, character_id: int, message: str, rag_context: str,
+    async def execute(self, user_id: int, character_id: int, message: str, rag_context: str, recap_context: str,
                      max_context_messages: int = 10) -> str:
         """Обработать сообщение пользователя (асинхронно)"""
         try:
             metrics_collector.record_message_received("text")
-            import time
             start_time = time.time()
 
             # Получаем персонажа для его системного промпта
@@ -49,9 +49,9 @@ class HandleMessageUseCase:
             metrics_collector.record_conversation_length(len(context_messages))
 
             # Подготавливаем сообщения для AI
-            enhanced_system_prompt = f"{character.system_prompt}\n\n ИЗВЛЕЧЕННЫЕ ВОСПОМИНАНИЯ, ИСПОЛЬЗУЙ ИХ В РАЗГОВОРЕ: {rag_context}"
+            enhanced_system_prompt = f"{character.system_prompt}\n\n Текущее состояние сцены (recap) — обязательно учитывай каждое слово перед каждым ответом: {recap_context} \n\nИЗВЛЕЧЕННЫЕ ВОСПОМИНАНИЯ, ИСПОЛЬЗУЙ ИХ В РАЗГОВОРЕ: {rag_context} \n\n "
             messages = self.context_service.prepare_messages_for_ai(
-                enhanced_system_prompt, context_messages, message, rag_context
+                enhanced_system_prompt, context_messages, message
             )
 
             # БЕЗОПАСНАЯ генерация ответа
