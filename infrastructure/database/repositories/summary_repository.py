@@ -21,7 +21,6 @@ class SummaryRepository:
                     character_id INTEGER NOT NULL,
                     level INTEGER NOT NULL DEFAULT 1,
                     content TEXT NOT NULL,
-                    message_count INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     deleted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -44,12 +43,11 @@ class SummaryRepository:
             # Используем UPSERT (UPDATE or INSERT) через ON CONFLICT
             query = '''
                 INSERT INTO conversation_summaries 
-                (user_id, character_id, level, content, message_count, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                (user_id, character_id, level, content, updated_at)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, character_id, level) 
                 DO UPDATE SET 
                     content = EXCLUDED.content,
-                    message_count = EXCLUDED.message_count,
                     updated_at = EXCLUDED.updated_at
                 RETURNING id
             '''
@@ -59,7 +57,6 @@ class SummaryRepository:
                 summary.character_id,
                 summary.level,
                 summary.content,
-                summary.message_count,
                 datetime.utcnow()
             ))
 
@@ -79,7 +76,7 @@ class SummaryRepository:
         try:
             result = self.db.fetch_one('''
                 SELECT id, user_id, character_id, level, content,
-                       message_count, created_at, updated_at, deleted_at
+                       created_at, updated_at, deleted_at
                 FROM conversation_summaries
                 WHERE user_id = %s AND character_id = %s AND level = %s
             ''', (user_id, character_id, level))
@@ -91,7 +88,6 @@ class SummaryRepository:
                     character_id=result['character_id'],
                     level=result['level'],
                     content=result['content'],
-                    message_count=result['message_count'],
                     created_at=result['created_at'],
                     updated_at=result['updated_at'],
                     deleted_at=result['deleted_at']
@@ -108,7 +104,7 @@ class SummaryRepository:
         try:
             results = self.db.fetch_all('''
                 SELECT id, user_id, character_id, level, content,
-                       message_count, created_at, updated_at, deleted_at
+                       created_at, updated_at, deleted_at
                 FROM conversation_summaries
                 WHERE user_id = %s AND character_id = %s
                 ORDER BY level DESC, updated_at DESC
@@ -122,7 +118,6 @@ class SummaryRepository:
                     character_id=result['character_id'],
                     level=result['level'],
                     content=result['content'],
-                    message_count=result['message_count'],
                     created_at=result['created_at'],
                     updated_at=result['updated_at'],
                     deleted_at=result['deleted_at']

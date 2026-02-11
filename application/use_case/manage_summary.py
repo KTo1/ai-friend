@@ -21,75 +21,78 @@ class ManageSummaryUseCase:
         """Проверяет и обновляет суммаризации при необходимости"""
 
         try:
-            # Получаем историю сообщений
-            messages = self.conversation_repo.get_conversation_context(
-                user_id, character_id, max_context_messages=50
-            ) or []
+            # сюда попадает каждое второео
+            level_1_messages_count = 8
 
-            if len(messages) < 10:  # Минимум для суммаризации
+            # Получаем историю сообщений
+            messages_count = self.conversation_repo.get_conversation_count(user_id, character_id)
+
+            if messages_count == 0 or messages_count % level_1_messages_count != 0:
                 return False
 
+            messages = self.conversation_repo.get_conversation_context(
+                user_id, character_id, max_context_messages=level_1_messages_count
+            ) or []
+
             generated = False
+            previous_summary_content = ""
 
             # Уровень 1: Краткая суммаризация диалога
-            level1_summary = self.summary_repo.get_summary(user_id, character_id, level=1)
+            previous_summary = self.summary_repo.get_summary(user_id, character_id, level=1)
+            if previous_summary:
+                previous_summary_content = previous_summary.content
 
-            if self.summary_service.should_generate_level1(
-                    len(messages),
-                    level1_summary.message_count if level1_summary else 0
-            ):
-                summary_data = await self.summary_service.generate_dialog_summary(
-                    messages, character_name
+            summary_data = await self.summary_service.generate_dialog_summary(
+                messages, previous_summary_content, character_name
+            )
+
+            if summary_data:
+                summary = ConversationSummary(
+                    user_id=user_id,
+                    character_id=character_id,
+                    level=1,
+                    content=summary_data['content']
                 )
 
-                if summary_data:
-                    summary = ConversationSummary(
-                        user_id=user_id,
-                        character_id=character_id,
-                        level=1,
-                        content=summary_data['content'],
-                        message_count=summary_data['message_count'],
+                if self.summary_repo.save_summary(summary):
+                    self.logger.info(
+                        f'Generated level 1 summary for user {user_id}',
+                        extra={'user_id': user_id, 'character_id': character_id}
                     )
+                    generated = True
 
-                    if self.summary_repo.save_summary(summary):
-                        self.logger.info(
-                            f'Generated level 1 summary for user {user_id}',
-                            extra={'user_id': user_id, 'character_id': character_id}
-                        )
-                        generated = True
-
-            # Уровень 2: Детальная суммаризация сессии/отношений
-            level2_summary = self.summary_repo.get_summary(user_id, character_id, level=2)
-
-            hours_since_last = 999  # Большое значение по умолчанию
-            if level2_summary:
-                hours_since_last = (datetime.utcnow() - level2_summary.updated_at).total_seconds() / 3600
-
-            if self.summary_service.should_generate_level2(len(messages), hours_since_last):
-                # Получаем предыдущие суммаризации для контекста
-                previous_summaries = []
-                if level1_summary:
-                    previous_summaries.append(level1_summary.content)
-
-                summary_data = await self.summary_service.generate_session_summary(
-                    messages, previous_summaries, character_name
-                )
-
-                if summary_data:
-                    summary = ConversationSummary(
-                        user_id=user_id,
-                        character_id=character_id,
-                        level=2,
-                        content=summary_data['content'],
-                        message_count=summary_data['message_count']
-                    )
-
-                    if self.summary_repo.save_summary(summary):
-                        self.logger.info(
-                            f'Generated level 2 summary for user {user_id}',
-                            extra={'user_id': user_id, 'character_id': character_id}
-                        )
-                        generated = True
+            # # Уровень 2: Детальная суммаризация сессии/отношений
+            # level2_summary = self.summary_repo.get_summary(user_id, character_id, level=2)
+            #
+            # hours_since_last = 999  # Большое значение по умолчанию
+            # if level2_summary:
+            #     hours_since_last = (datetime.utcnow() - level2_summary.updated_at).total_seconds() / 3600
+            #
+            # if self.summary_service.should_generate_level2(len(messages), hours_since_last):
+            #     # Получаем предыдущие суммаризации для контекста
+            #     previous_summaries = []
+            #     if level1_summary:
+            #         previous_summaries.append(level1_summary.content)
+            #
+            #     summary_data = await self.summary_service.generate_session_summary(
+            #         messages, previous_summaries, character_name
+            #     )
+            #
+            #     if summary_data:
+            #         summary = ConversationSummary(
+            #             user_id=user_id,
+            #             character_id=character_id,
+            #             level=2,
+            #             content=summary_data['content'],
+            #             message_count=summary_data['message_count']
+            #         )
+            #
+            #         if self.summary_repo.save_summary(summary):
+            #             self.logger.info(
+            #                 f'Generated level 2 summary for user {user_id}',
+            #                 extra={'user_id': user_id, 'character_id': character_id}
+            #             )
+            #             generated = True
 
             return generated
 

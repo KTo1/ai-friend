@@ -27,6 +27,19 @@ class ConversationRepository:
 
         return [{'role': row['role'], 'content': row['content']} for row in results]
 
+    def get_conversation_count(self, user_id: int, character_id: int) -> int:
+        """Получить контекст разговора с учетом лимита"""
+        result = self.db.fetch_one('''
+            SELECT count(*) 
+            FROM conversation_context 
+            WHERE user_id = %s AND character_id = %s AND deleted_at is NULL
+        ''', (user_id, character_id))
+
+        if result:
+            return result['count']
+
+        return 0
+
     def clear_conversation(self, user_id: int, character_id: int):
         """Очистить историю разговора"""
         #self.db.execute_query('DELETE FROM conversation_context WHERE user_id = %s AND character_id = %s', (user_id, character_id))

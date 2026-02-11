@@ -11,17 +11,14 @@ class SummaryService:
         self.ai_client = ai_client
         self.logger = StructuredLogger('summary_service')
 
-    async def generate_dialog_summary(self, messages: List[Dict],
+    async def generate_dialog_summary(self, messages: List[Dict], previous_summary: str,
                                       character_name: str) -> Optional[Dict[str, Any]]:
         """Генерирует краткую суммаризацию диалога (уровень 1)"""
 
         try:
-            # Берем последние 20 сообщений для суммаризации
-            recent_messages = messages[-20:]
-
             # Формируем текст диалога
             dialog_text = "Последний диалог:\n\n"
-            for msg in recent_messages:
+            for msg in messages:
                 role = "👤 Пользователь" if msg['role'] == 'user' else f"🤖 {character_name}"
                 dialog_text += f"{role}: {msg['content']}\n\n"
 
@@ -45,7 +42,7 @@ class SummaryService:
                 },
                 {
                     'role': 'user',
-                    'content': f"Суммаризируй этот диалог:\n\n{dialog_text}"
+                    'content': f"Предыдущая суммаризация, учти ее при формировании новой{previous_summary}.\n\n Диалог для анализа:\n\n{dialog_text}"
                 }
             ]
 
@@ -58,7 +55,7 @@ class SummaryService:
             return {
                 'content': response.strip(),
                 'level': 1,
-                'message_count': len(recent_messages)
+                'message_count': len(messages)
             }
 
         except Exception as e:
@@ -81,6 +78,8 @@ class SummaryService:
                 {
                     'role': 'system',
                     'content': f'''Ты создаешь детальную суммаризацию отношений пользователя с персонажем {character_name}.
+
+Ты — эксперт по поддержанию контекста в диалогах.
 
 Включи:
 1. Характерные паттерны общения
@@ -111,13 +110,6 @@ class SummaryService:
         except Exception as e:
             self.logger.error(f'Error generating session summary: {e}')
             return None
-
-    def should_generate_level1(self, message_count: int,
-                               last_summary_count: int = 0) -> bool:
-        """Нужно ли генерировать суммаризацию уровня 1?"""
-        # Генерируем каждые 10 сообщений или если сообщений стало в 2 раза больше с последней суммаризации
-        return (message_count >= 10 and
-                (last_summary_count == 0 or message_count >= last_summary_count * 2))
 
     def should_generate_level2(self, message_count: int,
                                hours_since_last: float = 24.0) -> bool:

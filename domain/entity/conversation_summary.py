@@ -10,7 +10,6 @@ class ConversationSummary:
     character_id: int = None
     level: int = 1  # 1=краткая суммаризация (диалог), 2=детальная суммаризация (сессия/отношения)
     content: str = None
-    message_count: int = 0
     created_at: datetime = None
     updated_at: datetime = None
     deleted_at: datetime = None
