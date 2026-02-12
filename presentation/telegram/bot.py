@@ -10,8 +10,6 @@ from telegram.constants import ParseMode
 from presentation.telegram.markdown_utils import MarkdownFormatter
 from presentation.telegram.middleware import TelegramMiddleware
 
-from domain.entity.character import Character
-
 from infrastructure.database.database import Database
 from infrastructure.database.repositories.user_repository import UserRepository
 from infrastructure.database.repositories.profile_repository import ProfileRepository
@@ -29,16 +27,14 @@ from infrastructure.monitoring.metrics import metrics_collector
 from infrastructure.monitoring.tracing import trace_manager
 from infrastructure.monitoring.health_check import HealthChecker
 
-from application.use_case.start_conversation import StartConversationUseCase
-from application.use_case.manage_profile import ManageProfileUseCase
-from application.use_case.handle_message import HandleMessageUseCase
-
 from domain.service.admin_service import AdminService
 from domain.service.block_service import BlockService
 from domain.service.tariff_service import TariffService
 from domain.service.rag_service import RAGService
 from domain.service.limit_service import LimitService
 from domain.service.summary_service import SummaryService
+
+from domain.entity.character import Character
 
 from application.use_case.manage_admin import ManageAdminUseCase
 from application.use_case.manage_block import ManageBlockUseCase
@@ -48,6 +44,10 @@ from application.use_case.manage_rag import ManageRAGUseCase
 from application.use_case.check_limits import CheckLimitsUseCase
 from application.use_case.manage_character import ManageCharacterUseCase
 from application.use_case.manage_summary import ManageSummaryUseCase
+from application.use_case.start_conversation import StartConversationUseCase
+from application.use_case.manage_profile import ManageProfileUseCase
+from application.use_case.handle_message import HandleMessageUseCase
+
 
 # Импорты для Telegram rate limiting
 from presentation.telegram.message_sender import get_telegram_sender, get_telegram_rate_limiter
@@ -96,7 +96,6 @@ class FriendBot:
         # Инициализация use cases с правильными зависимостями
         self.start_conversation_uc = StartConversationUseCase(self.user_repo, self.profile_repo, self.tariff_service)
         self.manage_profile_uc = ManageProfileUseCase(self.profile_repo, self.ai_client)
-        self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.character_repo, self.ai_client)
         self.manage_admin_uc = ManageAdminUseCase(self.admin_service)
         self.manage_block_uc = ManageBlockUseCase(self.block_service)
         self.manage_user_limits_uc = ManageUserLimitsUseCase(self.user_stats_repo)
@@ -104,11 +103,9 @@ class FriendBot:
         self.manage_rag_uc = ManageRAGUseCase(self.rag_repo, self.rag_service)
         self.check_limits_uc = CheckLimitsUseCase(self.limit_service)
         self.manage_character_uc = ManageCharacterUseCase(self.character_repo, self.user_repo)
-        self.manage_summary_uc = ManageSummaryUseCase(
-            self.summary_repo,
-            self.conversation_repo,
-            self.summary_service
-        )
+        self.manage_summary_uc = ManageSummaryUseCase(self.summary_repo, self.summary_service, self.conversation_repo)
+        self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.character_repo,
+                                                      self.ai_client, self.manage_summary_uc, self.manage_rag_uc, self.manage_profile_uc)
 
         self.middleware = TelegramMiddleware()
 
@@ -1173,38 +1170,36 @@ class FriendBot:
                     self.middleware.create_user_from_telegram(user)
                 )
 
-            # Асинхронно запускаем генерацию суммаризаций (не блокируя ответ)
-            asyncio.create_task(
-                self.manage_summary_uc.check_and_update_summaries(
-                    user_id, character.id, character.name
-                )
-            )
-
-            # Извлекаем и сохраняем воспоминания (асинхронно)
-            asyncio.create_task(
-                self.manage_rag_uc.extract_and_save_memories(user.id, character.id, user_message)
-            )
-
-            # Получаем релевантные воспоминания для текущего сообщения
-            rag_context = await self.manage_rag_uc.prepare_rag_context(
-                user.id, character.id, user_message
-            )
+            # # Асинхронно запускаем генерацию суммаризаций (не блокируя ответ)
+            # asyncio.create_task(
+            #     self.manage_summary_uc.check_and_update_summaries(
+            #         user_id, character.id, character.name, user_message
+            #     )
+            # )
+            #
+            # # Извлекаем и сохраняем воспоминания (асинхронно)
+            # asyncio.create_task(
+            #     self.manage_rag_uc.extract_and_save_memories(user.id, character.id, user_message)
+            # )
 
             # Получаем релевантные воспоминания для текущего сообщения
-            recap_context = self.manage_summary_uc.get_summary_context(
-                user.id, character.id
-            )
+            # rag_context = await self.manage_rag_uc.prepare_rag_context(
+            #     user.id, character.id, user_message
+            # )
+            #
+            # # Получаем релевантные воспоминания для текущего сообщения
+            # recap_context = self.manage_summary_uc.get_summary_context(
+            #     user.id, character.id
+            # )
 
-            self.logger.debug(
-                "RAG context prepared",
-                extra={
-                    'user_id': user.id,
-                    'rag_context_length': len(rag_context),
-                    'has_rag_context': bool(rag_context)
-                }
-            )
-
-            profile_data = await self.manage_profile_uc.extract_and_update_profile(user_id, user_message)
+            # self.logger.debug(
+            #     "RAG context prepared",
+            #     extra={
+            #         'user_id': user.id,
+            #         'rag_context_length': len(rag_context),
+            #         'has_rag_context': bool(rag_context)
+            #     }
+            # )
 
             await self._send_typing_status(user_id)
 
@@ -1213,8 +1208,6 @@ class FriendBot:
                 user_id,
                 character.id,
                 user_message,
-                rag_context,
-                recap_context,
                 max_context_messages=tariff.message_limits.max_context_messages
             )
 
