@@ -1,6 +1,8 @@
-from datetime import datetime
+from typing import List, Dict
+
 from domain.entity.conversation_summary import ConversationSummary
 from domain.service.summary_service import SummaryService
+
 from infrastructure.database.repositories.summary_repository import SummaryRepository
 from infrastructure.database.repositories.conversation_repository import ConversationRepository
 from infrastructure.monitoring.logging import StructuredLogger
@@ -9,30 +11,24 @@ from infrastructure.monitoring.logging import StructuredLogger
 class ManageSummaryUseCase:
 
     def __init__(self, summary_repository: SummaryRepository,
-                 conversation_repository: ConversationRepository,
-                 summary_service: SummaryService):
+                 summary_service: SummaryService, conversation_repository: ConversationRepository,):
         self.summary_repo = summary_repository
-        self.conversation_repo = conversation_repository
         self.summary_service = summary_service
+        self.conversation_repository = conversation_repository
         self.logger = StructuredLogger('manage_summary_uc')
 
     async def check_and_update_summaries(self, user_id: int, character_id: int,
-                                         character_name: str) -> bool:
+                                         character_name: str, context_messages: List[Dict]) -> bool:
         """Проверяет и обновляет суммаризации при необходимости"""
 
         try:
-            # сюда попадает каждое второео
             level_1_messages_count = 8
 
             # Получаем историю сообщений
-            messages_count = self.conversation_repo.get_conversation_count(user_id, character_id)
+            messages_count = self.conversation_repository.get_conversation_count(user_id, character_id)
 
             if messages_count == 0 or messages_count % level_1_messages_count != 0:
                 return False
-
-            messages = self.conversation_repo.get_conversation_context(
-                user_id, character_id, max_context_messages=level_1_messages_count
-            ) or []
 
             generated = False
             previous_summary_content = ""
@@ -43,7 +39,7 @@ class ManageSummaryUseCase:
                 previous_summary_content = previous_summary.content
 
             summary_data = await self.summary_service.generate_dialog_summary(
-                messages, previous_summary_content, character_name
+                context_messages, previous_summary_content, character_name
             )
 
             if summary_data:

@@ -3,9 +3,8 @@ from typing import List, Dict
 
 class ContextService:
     @staticmethod
-    def prepare_messages_for_ai(system_prompt: str, context_messages: List[Dict], current_message: str, rag_context: str) -> List[Dict]:
+    def prepare_messages_for_ai(system_prompt: str, context_messages: List[Dict], current_message: str) -> List[Dict]:
         """Подготовка сообщений для отправки в AI"""
-
 
         messages = [{"role": "system", "content": system_prompt}]
 

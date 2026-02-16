@@ -4,7 +4,6 @@ from infrastructure.database.repositories.profile_repository import ProfileRepos
 from infrastructure.monitoring.tracing import trace_span
 from infrastructure.monitoring.logging import StructuredLogger
 from domain.interfaces.ai_client import AIClientInterface  # <--- 1. Импортируем AIClient
-from typing import Tuple
 
 
 class ManageProfileUseCase:
@@ -15,14 +14,14 @@ class ManageProfileUseCase:
         self.logger = StructuredLogger("manage_profile_uc")
 
     @trace_span("usecase.extract_profile", attributes={"component": "application"})
-    async def extract_and_update_profile(self, user_id: int, message: str) -> tuple:
+    async def extract_and_update_profile(self, user_id: int, message: str) -> str:
 
         # 5. Вызываем новый async метод LLM
         name, age, interests, mood, gender = await self.profile_service.extract_profile_info_llm(message)
 
         # Если LLM ничего не вернул (не было триггеров или данных), выходим
         if not any([name, age, interests, mood, gender]):
-            return None, None, None, None, None
+            return str(UserProfile(user_id))
 
         # 6. Обновляем профиль в базе
         profile = self.profile_repo.get_profile(user_id)
@@ -38,4 +37,4 @@ class ManageProfileUseCase:
             extra={'user_id': user_id, 'extracted_name': name, 'extracted_age': age, 'extracted_interests': interests, 'extracted_mood': mood, 'extracted_gender': gender}
         )
 
-        return name, age, interests, mood, gender
+        return str(profile)

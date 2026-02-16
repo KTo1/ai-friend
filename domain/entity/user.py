@@ -18,6 +18,11 @@ class User:
     created_at: datetime = None
     last_seen: datetime = None
 
+    # Проактивные сообщения
+    last_proactive_sent_at: Optional[datetime] = None
+    proactive_missed_count: int = 0
+    proactive_enabled: bool = True
+
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = datetime.now()
@@ -44,3 +49,8 @@ class User:
 
     def set_character(self, character_id: int):  
         self.current_character_id = character_id
+
+    def reset_proactive_state(self):
+        """Сбрасывает счётчик пропущенных и включает проактив при ответе пользователя."""
+        self.proactive_missed_count = 0
+        self.proactive_enabled = True

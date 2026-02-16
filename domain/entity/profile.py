@@ -31,3 +31,6 @@ class UserProfile:
             self.gender = gender
 
         self.last_active = datetime.now()
+
+    def __str__(self):
+        return f"Имя: {self.name}, Возраст: {self.age}, Интересы: {self.interests}, Настроение: {self.mood}, Пол: {self.gender}"
