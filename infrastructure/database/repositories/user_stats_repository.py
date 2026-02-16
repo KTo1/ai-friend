@@ -1,8 +1,9 @@
-from typing import Optional, Dict, Any
+from typing import Optional
 from datetime import datetime
 from domain.entity.user_stats import UserStats
 from infrastructure.database.database import Database
 from infrastructure.monitoring.logging import StructuredLogger
+from infrastructure.monitoring.metrics import metrics_collector
 
 
 class UserStatsRepository:
@@ -100,6 +101,25 @@ class UserStatsRepository:
         except Exception as e:
             self.logger.error(f"Error saving user stats for {stats.user_id}: {e}")
 
+    def check_and_mark_paywall(self, user_id: int, character_id: int ) -> bool:
+        """Если пользователь достиг paywall и ещё не отмечен, отмечает и возвращает True."""
+        stats = self.get_user_stats(user_id)
+        if stats is None:
+            stats = UserStats(user_id=user_id)
+        if not stats.paywall_reached:
+            stats.record_paywall_reached()
+            self.save_user_stats(stats)
+            self.logger.info(f'Marked paywall reached for user {user_id}')
+
+            # Записываем детальную метрику для аналитики
+            metrics_collector.record_user_reached_paywall(
+                user_id=user_id,
+                character_id=character_id
+            )
+
+            return True
+
+        return False
 
     def mark_paywall_reached(self, stats: UserStats) -> bool:
         try:

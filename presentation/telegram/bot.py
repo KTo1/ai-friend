@@ -1089,15 +1089,7 @@ class FriendBot:
             return
 
         if user_tariff.is_expired():
-            user_stats = self.user_stats_repo.get_user_stats(user_id)
-            if not user_stats or not user_stats.paywall_reached:
-                self.user_stats_repo.mark_paywall_reached(user_stats)
-
-                # Записываем детальную метрику для аналитики
-                metrics_collector.record_user_reached_paywall(
-                    user_id=user_id,
-                    character_id=character.id
-                )
+            self.user_stats_repo.check_and_mark_paywall(user_id, character.id)
 
             message_paywall = """
             Дорогой друг! Надеюсь, тебе понравилось наше общение за этот день 😊
