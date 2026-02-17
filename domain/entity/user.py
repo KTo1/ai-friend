@@ -23,6 +23,8 @@ class User:
     proactive_missed_count: int = 0
     proactive_enabled: bool = True
 
+    utm_label: str = ""
+
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = datetime.now()

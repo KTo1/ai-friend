@@ -1,3 +1,5 @@
+from typing import List
+
 from domain.entity.profile import UserProfile
 from domain.entity.user import User
 from domain.service.tariff_service import TariffService
@@ -15,13 +17,17 @@ class StartConversationUseCase:
         self.logger = StructuredLogger("start_conversation_uc")
 
     @trace_span("usecase.start_conversation", attributes={"component": "application"})
-    def execute(self, user_id: int, username: str, first_name: str, last_name: str) -> str:
+    def execute(self, user_id: int, username: str, first_name: str, last_name: str, args: List[str]) -> str:
         user = User(
             user_id=user_id,
             username=username,
             first_name=first_name,
             last_name=last_name
         )
+
+        if len(args) > 0:
+            user.utm_label = args[0]
+            
         self.user_repo.save_user(user)
 
         # НАЗНАЧЕНИЕ ТАРИФА ПО УМОЛЧАНИЮ ПРИ ПЕРВОМ СТАРТЕ
