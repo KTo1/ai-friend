@@ -3,6 +3,8 @@ import asyncio
 
 import tempfile
 
+from datetime import datetime, timedelta
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, LabeledPrice
 from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, ApplicationBuilder, PreCheckoutQueryHandler
 from telegram.constants import ParseMode
@@ -33,6 +35,7 @@ from domain.service.tariff_service import TariffService
 from domain.service.rag_service import RAGService
 from domain.service.limit_service import LimitService
 from domain.service.summary_service import SummaryService
+from domain.service.proactive_service import ProactiveService
 
 from domain.entity.character import Character
 
@@ -47,6 +50,7 @@ from application.use_case.manage_summary import ManageSummaryUseCase
 from application.use_case.start_conversation import StartConversationUseCase
 from application.use_case.manage_profile import ManageProfileUseCase
 from application.use_case.handle_message import HandleMessageUseCase
+from application.use_case.send_proactive import SendProactiveMessageUseCase
 
 
 # Импорты для Telegram rate limiting
@@ -86,6 +90,7 @@ class FriendBot:
             self.user_stats_repo
         )
         self.summary_service = SummaryService(self.ai_client)
+        self.proactive_service = ProactiveService()
 
         self.health_checker = HealthChecker(self.database)
 
@@ -106,12 +111,62 @@ class FriendBot:
         self.manage_summary_uc = ManageSummaryUseCase(self.summary_repo, self.summary_service, self.conversation_repo)
         self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.character_repo,
                                                       self.ai_client, self.manage_summary_uc, self.manage_rag_uc, self.manage_profile_uc)
+        self.send_proactive_uc = SendProactiveMessageUseCase(
+            user_repo=self.user_repo,
+            user_stats_repo=self.user_stats_repo,
+            character_repo=self.character_repo,
+            proactive_service=self.proactive_service,
+            telegram_sender=self.telegram_sender
+        )
 
         self.middleware = TelegramMiddleware()
 
         self.user_character_selections = {}  # {user_id: {'page': 0, 'characters': []}}
+        self._proactive_task = None
 
         self.logger.info("FriendBot initialized successfully")
+
+    async def _start_proactive_worker(self, application):
+        """Запускается после инициализации приложения."""
+        await asyncio.sleep(10)  # небольшая задержка при старте
+
+        self._proactive_task = asyncio.create_task(self._proactive_worker())
+        self.logger.info("Proactive worker scheduled")
+
+    async def _proactive_worker(self):
+        self.logger.info("Proactive worker started)")
+        while True:
+            try:
+                if self.application:
+                    await self.send_proactive_uc.execute(bot=self.application.bot)
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error(f"Proactive worker error: {e}", exc_info=True)
+                await asyncio.sleep(60)
+
+    # async def _proactive_worker(self):
+    #     """Фоновая задача, отправляет проактивные сообщения раз в сутки."""
+    #     await asyncio.sleep(5)
+    #     self.logger.info("Proactive worker started")
+    #     while True:
+    #         try:
+    #             now = datetime.utcnow()
+    #             target = now.replace(hour=10, minute=0, second=0, microsecond=0)
+    #             if now >= target:
+    #                 target += timedelta(days=1)
+    #             wait_seconds = (target - now).total_seconds()
+    #             self.logger.info(f"Next proactive run at {target} (in {wait_seconds:.0f}s)")
+    #             await asyncio.sleep(wait_seconds)
+    #
+    #             if self.application:
+    #                 await self.send_proactive_uc.execute(bot=self.application.bot)
+    #         except asyncio.CancelledError:
+    #             break
+    #         except Exception as e:
+    #             self.logger.error(f"Proactive worker error: {e}", exc_info=True)
+    #             await asyncio.sleep(60)
 
     async def show_character_carousel(self, update: Update, page: int = 0):
         user_id = update.effective_user.id
@@ -1162,6 +1217,15 @@ class FriendBot:
                     self.middleware.create_user_from_telegram(user)
                 )
 
+            if existing_user:
+                existing_user.reset_proactive_state()
+                self.user_repo.update_proactive_state(
+                    user_id,
+                    existing_user.last_proactive_sent_at,
+                    0,
+                    True
+                )
+
             # # Асинхронно запускаем генерацию суммаризаций (не блокируя ответ)
             # asyncio.create_task(
             #     self.manage_summary_uc.check_and_update_summaries(
@@ -1350,6 +1414,13 @@ class FriendBot:
         """Корректное завершение работы"""
         self.logger.info("Cleaning up resources...")
 
+        if self._proactive_task:
+            self._proactive_task.cancel()
+            try:
+                await self._proactive_task
+            except asyncio.CancelledError:
+                pass
+
         # Закрываем AI клиенты
         if hasattr(self, 'ai_client'):
             await self.ai_client.close()
@@ -1366,6 +1437,7 @@ class FriendBot:
                 .read_timeout(15.0)
                 .write_timeout(15.0)
                 .pool_timeout(15.0)
+                .post_init(self._start_proactive_worker)
                 .build()
             )
 
