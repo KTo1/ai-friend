@@ -47,7 +47,7 @@ class ProactiveService:
         # Подготавливаем сообщения для AI
         enhanced_system_prompt = (f"""СИСТЕМНЫЙ ПРОМТП, ПОВЕДЕНИЕ ПЕРСОНАЖА: {character.system_prompt}\n\n                                           
                                   ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ, ИСПОЛЬЗУЙ ЭТО В РАЗГОВОРЕ, ЕСЛИ КАКИХ-ТО ДАННЫХ НЕТ (NONE), ТО ОЧЕНЬ НЕНАВЯЗЧИВО СПРАШИВАЙ О НИХ:  {profile_data} \n\n
-                                  ОБЯЗТЕЛЬНО УЧТИ, ЧТО ПОЛЬЗОВАТЕЛЬ НЕ ОТВЕЧАЛ СУТКИ, И СОСТАВЬ СООБЩЕНИЕ С УЧЕТОМ ЭТОГО""")
+                                  ОБЯЗТЕЛЬНО УЧТИ, ЧТО ПОЛЬЗОВАТЕЛЬ НЕ ОТВЕЧАЛ СУТКИ (24 ЧАСА), И СОСТАВЬ СООБЩЕНИЕ С УЧЕТОМ ЭТОГО""")
         messages = self.context_service.prepare_messages_for_ai(
             enhanced_system_prompt, context_messages, message
         )

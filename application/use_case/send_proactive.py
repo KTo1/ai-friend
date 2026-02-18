@@ -43,7 +43,7 @@ class SendProactiveMessageUseCase:
                 last_message_at = user_stats.last_message_at
 
             seconds_since_last = (datetime.utcnow() - last_message_at).total_seconds()
-            if user.proactive_missed_count >= MaxMessagesSend or seconds_since_last < 86400:
+            if user.proactive_missed_count >= MaxMessagesSend or seconds_since_last < 3600:
                 return
 
             if not user.current_character_id:

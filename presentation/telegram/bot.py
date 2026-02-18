@@ -134,39 +134,17 @@ class FriendBot:
         self.logger.info("Proactive worker scheduled")
 
     async def _proactive_worker(self):
-        self.logger.info("Proactive worker started)")
+        self.logger.info("Proactive worker started")
         while True:
             try:
                 if self.application:
                     await self.send_proactive_uc.execute(bot=self.application.bot)
-                await asyncio.sleep(30)
+                await asyncio.sleep(600)
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 self.logger.error(f"Proactive worker error: {e}", exc_info=True)
                 await asyncio.sleep(60)
-
-    # async def _proactive_worker(self):
-    #     """Фоновая задача, отправляет проактивные сообщения раз в сутки."""
-    #     await asyncio.sleep(5)
-    #     self.logger.info("Proactive worker started")
-    #     while True:
-    #         try:
-    #             now = datetime.utcnow()
-    #             target = now.replace(hour=10, minute=0, second=0, microsecond=0)
-    #             if now >= target:
-    #                 target += timedelta(days=1)
-    #             wait_seconds = (target - now).total_seconds()
-    #             self.logger.info(f"Next proactive run at {target} (in {wait_seconds:.0f}s)")
-    #             await asyncio.sleep(wait_seconds)
-    #
-    #             if self.application:
-    #                 await self.send_proactive_uc.execute(bot=self.application.bot)
-    #         except asyncio.CancelledError:
-    #             break
-    #         except Exception as e:
-    #             self.logger.error(f"Proactive worker error: {e}", exc_info=True)
-    #             await asyncio.sleep(60)
 
     async def show_character_carousel(self, update: Update, page: int = 0):
         user_id = update.effective_user.id
