@@ -7,6 +7,7 @@ from infrastructure.database.repositories.character_repository import CharacterR
 from presentation.telegram.message_sender import TelegramMessageSender
 from infrastructure.monitoring.logging import StructuredLogger
 
+MaxMessagesSend = 1
 
 class SendProactiveMessageUseCase:
     def __init__(self,
@@ -30,12 +31,19 @@ class SendProactiveMessageUseCase:
         disabled_count = 0
 
         for user in users:
-            stats = self.user_stats_repo.get_user_stats(user.user_id)
-            last_user_msg_at = stats.last_message_at if stats else None
+            user_stats = self.user_stats_repo.get_user_stats(user.user_id)
+            if not user_stats:
+                continue
 
-            last_message_at = last_user_msg_at if last_user_msg_at < user.last_proactive_sent_at else user.last_proactive_sent_at
+            if not user.last_proactive_sent_at:
+                last_message_at = user_stats.last_message_at
+            elif user_stats.last_message_at < user.last_proactive_sent_at:
+                last_message_at = user.last_proactive_sent_at
+            else:
+                last_message_at = user_stats.last_message_at
+
             seconds_since_last = (datetime.utcnow() - last_message_at).total_seconds()
-            if user.proactive_missed_count > 2 or seconds_since_last < 30:
+            if user.proactive_missed_count >= MaxMessagesSend or seconds_since_last < 86400:
                 return
 
             if not user.current_character_id:
@@ -54,6 +62,10 @@ class SendProactiveMessageUseCase:
                 now = datetime.utcnow()
                 user.last_proactive_sent_at = now
                 user.proactive_missed_count = user.proactive_missed_count + 1
+
+                if user.proactive_missed_count >= MaxMessagesSend:
+                    user.proactive_enabled = False
+
                 self.user_repo.update_proactive_state(
                     user.user_id,
                     now,

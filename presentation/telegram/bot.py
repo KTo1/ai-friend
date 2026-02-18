@@ -90,7 +90,7 @@ class FriendBot:
             self.user_stats_repo
         )
         self.summary_service = SummaryService(self.ai_client)
-        self.proactive_service = ProactiveService()
+        self.proactive_service = ProactiveService(self.ai_client, self.tariff_service, self.conversation_repo, self.character_repo, self.profile_repo)
 
         self.health_checker = HealthChecker(self.database)
 
@@ -1226,37 +1226,6 @@ class FriendBot:
                     True
                 )
 
-            # # Асинхронно запускаем генерацию суммаризаций (не блокируя ответ)
-            # asyncio.create_task(
-            #     self.manage_summary_uc.check_and_update_summaries(
-            #         user_id, character.id, character.name, user_message
-            #     )
-            # )
-            #
-            # # Извлекаем и сохраняем воспоминания (асинхронно)
-            # asyncio.create_task(
-            #     self.manage_rag_uc.extract_and_save_memories(user.id, character.id, user_message)
-            # )
-
-            # Получаем релевантные воспоминания для текущего сообщения
-            # rag_context = await self.manage_rag_uc.prepare_rag_context(
-            #     user.id, character.id, user_message
-            # )
-            #
-            # # Получаем релевантные воспоминания для текущего сообщения
-            # recap_context = self.manage_summary_uc.get_summary_context(
-            #     user.id, character.id
-            # )
-
-            # self.logger.debug(
-            #     "RAG context prepared",
-            #     extra={
-            #         'user_id': user.id,
-            #         'rag_context_length': len(rag_context),
-            #         'has_rag_context': bool(rag_context)
-            #     }
-            # )
-
             await self._send_typing_status(user_id)
 
             # Обрабатываем сообщение с передачей лимита контекста из тарифа
@@ -1267,8 +1236,7 @@ class FriendBot:
                 max_context_messages=tariff.message_limits.max_context_messages
             )
 
-            if not self.manage_admin_uc.is_user_admin(user_id):
-                self.check_limits_uc.record_message_usage(user_id, len(user_message), tariff)
+            self.check_limits_uc.record_message_usage(user_id, len(user_message), tariff)
 
             success = await self._safe_reply_without_format(update, response)
             if not success:
