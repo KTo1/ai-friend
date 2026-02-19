@@ -3,6 +3,8 @@ import asyncio
 
 import tempfile
 
+from datetime import datetime, timedelta
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, LabeledPrice
 from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, ApplicationBuilder, PreCheckoutQueryHandler
 from telegram.constants import ParseMode
@@ -33,6 +35,7 @@ from domain.service.tariff_service import TariffService
 from domain.service.rag_service import RAGService
 from domain.service.limit_service import LimitService
 from domain.service.summary_service import SummaryService
+from domain.service.proactive_service import ProactiveService
 
 from domain.entity.character import Character
 
@@ -47,6 +50,7 @@ from application.use_case.manage_summary import ManageSummaryUseCase
 from application.use_case.start_conversation import StartConversationUseCase
 from application.use_case.manage_profile import ManageProfileUseCase
 from application.use_case.handle_message import HandleMessageUseCase
+from application.use_case.send_proactive import SendProactiveMessageUseCase
 
 
 # Импорты для Telegram rate limiting
@@ -86,6 +90,7 @@ class FriendBot:
             self.user_stats_repo
         )
         self.summary_service = SummaryService(self.ai_client)
+        self.proactive_service = ProactiveService(self.ai_client, self.tariff_service, self.conversation_repo, self.character_repo, self.profile_repo)
 
         self.health_checker = HealthChecker(self.database)
 
@@ -106,12 +111,40 @@ class FriendBot:
         self.manage_summary_uc = ManageSummaryUseCase(self.summary_repo, self.summary_service, self.conversation_repo)
         self.handle_message_uc = HandleMessageUseCase(self.conversation_repo, self.character_repo,
                                                       self.ai_client, self.manage_summary_uc, self.manage_rag_uc, self.manage_profile_uc)
+        self.send_proactive_uc = SendProactiveMessageUseCase(
+            user_repo=self.user_repo,
+            user_stats_repo=self.user_stats_repo,
+            character_repo=self.character_repo,
+            proactive_service=self.proactive_service,
+            telegram_sender=self.telegram_sender
+        )
 
         self.middleware = TelegramMiddleware()
 
         self.user_character_selections = {}  # {user_id: {'page': 0, 'characters': []}}
+        self._proactive_task = None
 
         self.logger.info("FriendBot initialized successfully")
+
+    async def _start_proactive_worker(self, application):
+        """Запускается после инициализации приложения."""
+        await asyncio.sleep(10)  # небольшая задержка при старте
+
+        self._proactive_task = asyncio.create_task(self._proactive_worker())
+        self.logger.info("Proactive worker scheduled")
+
+    async def _proactive_worker(self):
+        self.logger.info("Proactive worker started")
+        while True:
+            try:
+                if self.application:
+                    await self.send_proactive_uc.execute(bot=self.application.bot)
+                await asyncio.sleep(600)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error(f"Proactive worker error: {e}", exc_info=True)
+                await asyncio.sleep(60)
 
     async def show_character_carousel(self, update: Update, page: int = 0):
         user_id = update.effective_user.id
@@ -1096,12 +1129,18 @@ class FriendBot:
 
 Ты почувствовал, каково это — иметь девушку, которая всегда на связи: без обид, усталости и «не сегодня».
 
-К сожалению, твой бесплатный пробный период подошёл к концу.
+Сейчас ты можешь:
 
-Но это только начало! С тарифом «Премиум» ты получишь:
-💬 Безлимитное общение — пиши сколько хочешь, когда хочешь.
-🧠 Более глубокий ИИ — я буду лучше помнить наши разговоры.
-✨ Длинные сообщения — делиться мыслями станет проще.
+✨ Продолжить в Премиуме — как в пробный день!
+
+• 💬 Безлимит сообщений — говори сколько хочешь
+• ⚡ Мгновенные ответы — без задержек
+• 🧠 Умная память — ИИ помнит контекст
+• 💫 Все персонажи — выбирай любую
+
+🚀 Проект постоянно развивается! 
+Мы регулярно добавляем новых персонажей, улучшаем качество диалогов и готовим новые возможности (голос, генерацию изображений). 
+В Премиуме ты получишь все обновления автоматически!
 
 Продолжим? Всего 799⭐ в месяц — как пара чашек кофе.
 
@@ -1162,36 +1201,14 @@ class FriendBot:
                     self.middleware.create_user_from_telegram(user)
                 )
 
-            # # Асинхронно запускаем генерацию суммаризаций (не блокируя ответ)
-            # asyncio.create_task(
-            #     self.manage_summary_uc.check_and_update_summaries(
-            #         user_id, character.id, character.name, user_message
-            #     )
-            # )
-            #
-            # # Извлекаем и сохраняем воспоминания (асинхронно)
-            # asyncio.create_task(
-            #     self.manage_rag_uc.extract_and_save_memories(user.id, character.id, user_message)
-            # )
-
-            # Получаем релевантные воспоминания для текущего сообщения
-            # rag_context = await self.manage_rag_uc.prepare_rag_context(
-            #     user.id, character.id, user_message
-            # )
-            #
-            # # Получаем релевантные воспоминания для текущего сообщения
-            # recap_context = self.manage_summary_uc.get_summary_context(
-            #     user.id, character.id
-            # )
-
-            # self.logger.debug(
-            #     "RAG context prepared",
-            #     extra={
-            #         'user_id': user.id,
-            #         'rag_context_length': len(rag_context),
-            #         'has_rag_context': bool(rag_context)
-            #     }
-            # )
+            if existing_user:
+                existing_user.reset_proactive_state()
+                self.user_repo.update_proactive_state(
+                    user_id,
+                    existing_user.last_proactive_sent_at,
+                    0,
+                    True
+                )
 
             await self._send_typing_status(user_id)
 
@@ -1203,8 +1220,7 @@ class FriendBot:
                 max_context_messages=tariff.message_limits.max_context_messages
             )
 
-            if not self.manage_admin_uc.is_user_admin(user_id):
-                self.check_limits_uc.record_message_usage(user_id, len(user_message), tariff)
+            self.check_limits_uc.record_message_usage(user_id, len(user_message), tariff)
 
             success = await self._safe_reply_without_format(update, response)
             if not success:
@@ -1350,6 +1366,13 @@ class FriendBot:
         """Корректное завершение работы"""
         self.logger.info("Cleaning up resources...")
 
+        if self._proactive_task:
+            self._proactive_task.cancel()
+            try:
+                await self._proactive_task
+            except asyncio.CancelledError:
+                pass
+
         # Закрываем AI клиенты
         if hasattr(self, 'ai_client'):
             await self.ai_client.close()
@@ -1366,6 +1389,7 @@ class FriendBot:
                 .read_timeout(15.0)
                 .write_timeout(15.0)
                 .pool_timeout(15.0)
+                .post_init(self._start_proactive_worker)
                 .build()
             )
 

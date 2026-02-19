@@ -82,7 +82,10 @@ class PostgreSQLDatabase:
                         blocked_at TIMESTAMP,
                         blocked_by BIGINT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        last_proactive_sent_at TIMESTAMP,
+                        proactive_missed_count INTEGER DEFAULT 0,
+                        proactive_enabled BOOLEAN DEFAULT TRUE
                     )
                 ''')
 
