@@ -38,18 +38,20 @@ class ProactiveService:
             max_context_messages=user_tariff.tariff_plan.message_limits.max_context_messages
         ) or []
 
-        message = ""
-        # # Получаем релевантные воспоминания для текущего сообщения
-        # recap_context = self.manage_summary_uc.get_summary_context(
-        #     user_id, character.id
-        # )
+        # Явный промпт для проактивного сообщения (как "user input")
+        proactive_prompt = (
+            "Пользователь не писал тебе уже 24 часа. Напомни о себе дружелюбно, "
+            "заинтересуй продолжить разговор, но не будь навязчивой. "
+            "Можешь спросить, как дела, или сослаться на предыдущую тему. "
+            "Учти профиль пользователя и стиль персонажа."
+        )
 
         # Подготавливаем сообщения для AI
         enhanced_system_prompt = (f"""СИСТЕМНЫЙ ПРОМТП, ПОВЕДЕНИЕ ПЕРСОНАЖА: {character.system_prompt}\n\n                                           
                                   ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ, ИСПОЛЬЗУЙ ЭТО В РАЗГОВОРЕ, ЕСЛИ КАКИХ-ТО ДАННЫХ НЕТ (NONE), ТО ОЧЕНЬ НЕНАВЯЗЧИВО СПРАШИВАЙ О НИХ:  {profile_data} \n\n
-                                  ОБЯЗТЕЛЬНО УЧТИ, ЧТО ПОЛЬЗОВАТЕЛЬ НЕ ОТВЕЧАЛ СУТКИ (24 ЧАСА), И СОСТАВЬ СООБЩЕНИЕ С УЧЕТОМ ЭТОГО""")
+                                  ВАЖНО!!!!! ОБЯЗТЕЛЬНО УЧТИ, ЧТО ПОЛЬЗОВАТЕЛЬ НЕ ОТВЕЧАЛ СУТКИ (24 ЧАСА), И СОСТАВЬ СООБЩЕНИЕ С УЧЕТОМ ЭТОГО \n\n """)
         messages = self.context_service.prepare_messages_for_ai(
-            enhanced_system_prompt, context_messages, message
+            enhanced_system_prompt, context_messages, proactive_prompt
         )
 
         # БЕЗОПАСНАЯ генерация ответа
