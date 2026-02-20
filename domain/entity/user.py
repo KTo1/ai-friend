@@ -23,6 +23,8 @@ class User:
     proactive_missed_count: int = 0
     proactive_enabled: bool = True
 
+    bot_blocked_at: Optional[datetime] = None
+
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = datetime.now()
@@ -52,5 +54,6 @@ class User:
 
     def reset_proactive_state(self):
         """Сбрасывает счётчик пропущенных и включает проактив при ответе пользователя."""
+        self.last_proactive_sent_at = None
         self.proactive_missed_count = 0
         self.proactive_enabled = True

@@ -486,9 +486,11 @@ class FriendBot:
             self.logger.error("Bot application not available")
             return False
 
-        return await self.telegram_sender.send_message(
+        result, error = await self.telegram_sender.send_message(
             self.application.bot, chat_id, text, **kwargs
         )
+
+        return result
 
     def _log_configuration(self):
         config_info = {
@@ -1203,12 +1205,7 @@ class FriendBot:
 
             if existing_user:
                 existing_user.reset_proactive_state()
-                self.user_repo.update_proactive_state(
-                    user_id,
-                    existing_user.last_proactive_sent_at,
-                    0,
-                    True
-                )
+                self.user_repo.save_user(existing_user)
 
             await self._send_typing_status(user_id)
 
