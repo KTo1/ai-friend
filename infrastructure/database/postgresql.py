@@ -85,7 +85,8 @@ class PostgreSQLDatabase:
                         last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         last_proactive_sent_at TIMESTAMP,
                         proactive_missed_count INTEGER DEFAULT 0,
-                        proactive_enabled BOOLEAN DEFAULT TRUE
+                        proactive_enabled BOOLEAN DEFAULT TRUE,
+                        bot_blocked_at TIMESTAMP
                     )
                 ''')
 

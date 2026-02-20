@@ -1,11 +1,11 @@
 import asyncio
 from typing import Optional, Dict, Any
 from telegram import Update, Bot
-from telegram.error import TelegramError, RetryAfter, TimedOut
+from telegram.error import TelegramError, RetryAfter, TimedOut, Forbidden
 from infrastructure.monitoring.logging import StructuredLogger
 from infrastructure.monitoring.metrics import metrics_collector
-from .telegram_rate_limiter import TelegramRateLimiter, TelegramRateLimitConfig
-
+from .telegram_rate_limiter import TelegramRateLimiter
+from domain.exception.telegram import TelegramExceptions
 
 class TelegramMessageSender:
     """
@@ -49,7 +49,7 @@ class TelegramMessageSender:
         parse_mode: Optional[str] = None,
         reply_to_message_id: Optional[int] = None,
         **kwargs
-    ) -> bool:
+    ) -> tuple[bool, TelegramExceptions | None]:
         """
         Безопасная отправка сообщения с учетом лимитов Telegram
 
@@ -64,7 +64,7 @@ class TelegramMessageSender:
                         if attempt == self._max_retries - 1:
                             self.logger.error(f"Failed to send message to {chat_id}: rate limit exceeded")
                             metrics_collector.record_telegram_send("rate_limit_exceeded")
-                            return False
+                            return False, None
                         continue
 
                 # Отправляем сообщение
@@ -82,7 +82,7 @@ class TelegramMessageSender:
                     'text_length': len(text),
                     'attempt': attempt + 1
                 })
-                return True
+                return True, None
 
             except RetryAfter as e:
                 # Telegram просит подождать
@@ -94,7 +94,7 @@ class TelegramMessageSender:
                     await asyncio.sleep(wait_time)
                 else:
                     self.logger.error(f"Failed to send message after {self._max_retries} retries")
-                    return False
+                    return False, TelegramExceptions.RetryAfter
 
             except TimedOut as e:
                 # Таймаут - пробуем снова
@@ -106,7 +106,18 @@ class TelegramMessageSender:
                     await asyncio.sleep(delay)
                 else:
                     self.logger.error(f"Failed to send message due to timeout after {self._max_retries} attempts")
-                    return False
+                    return False, TelegramExceptions.TimedOut
+
+            except Forbidden as e:
+                self.logger.warning(f"User was blocked bot for chat {chat_id}, attempt {attempt + 1}")
+                metrics_collector.record_telegram_send("forbidden")
+
+                if attempt < self._max_retries - 1:
+                    delay = self._base_delay * (2 ** attempt)  # Exponential backoff
+                    await asyncio.sleep(delay)
+                else:
+                    self.logger.error(f"Failed to send message due to timeout after {self._max_retries} attempts")
+                    return False, TelegramExceptions.Forbidden
 
             except TelegramError as e:
                 # Другие ошибки Telegram
@@ -117,7 +128,7 @@ class TelegramMessageSender:
                     delay = self._base_delay * (2 ** attempt)
                     await asyncio.sleep(delay)
                 else:
-                    return False
+                    return False, TelegramExceptions.TelegramError
 
             except Exception as e:
                 # Неожиданные ошибки
@@ -128,13 +139,13 @@ class TelegramMessageSender:
                     delay = self._base_delay * (2 ** attempt)
                     await asyncio.sleep(delay)
                 else:
-                    return False
+                    return False, TelegramExceptions.Other
 
-        return False
+        return False, None
 
     async def reply_to_message(
         self,
-        bot: Bot,  # ДОБАВЛЕНО: явно передаем бота
+        bot: Bot,
         update: Update,
         text: str,
         parse_mode: Optional[str] = None,
@@ -145,14 +156,15 @@ class TelegramMessageSender:
             self.logger.warning("No message to reply to")
             return False
 
-        return await self.send_message(
-            bot=bot,  # ИСПРАВЛЕНО: используем переданного бота
+        result, error = await self.send_message(
+            bot=bot,
             chat_id=update.message.chat_id,
             text=text,
             parse_mode=parse_mode,
             reply_to_message_id=update.message.message_id,
             **kwargs
         )
+        return result
 
 
 # Синглтон для глобального использования

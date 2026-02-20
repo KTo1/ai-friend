@@ -18,8 +18,8 @@ class UserRepository:
         self.db.execute_query('''
             INSERT INTO users 
             (user_id, username, first_name, last_name, current_character_id, is_admin, is_blocked, 
-             blocked_reason, blocked_at, blocked_by, last_seen, last_proactive_sent_at, proactive_missed_count, proactive_enabled)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             blocked_reason, blocked_at, blocked_by, last_seen, last_proactive_sent_at, proactive_missed_count, proactive_enabled, bot_blocked_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (user_id) DO UPDATE SET
                 username = EXCLUDED.username,
                 first_name = EXCLUDED.first_name,
@@ -33,7 +33,8 @@ class UserRepository:
                 last_seen = EXCLUDED.last_seen,
                 last_proactive_sent_at = EXCLUDED.last_proactive_sent_at,
                 proactive_missed_count = EXCLUDED.proactive_missed_count,
-                proactive_enabled = EXCLUDED.proactive_enabled                
+                proactive_enabled = EXCLUDED.proactive_enabled,
+                bot_blocked_at = EXCLUDED.bot_blocked_at
         ''', (
             user.user_id,
             user.username,
@@ -48,7 +49,8 @@ class UserRepository:
             user.last_seen,
             user.last_proactive_sent_at,
             user.proactive_missed_count,
-            user.proactive_enabled
+            user.proactive_enabled,
+            user.bot_blocked_at
         ))
 
     def get_user(self, user_id: int) -> Optional[User]:
@@ -56,7 +58,7 @@ class UserRepository:
         result = self.db.fetch_one(
             '''SELECT user_id, username, first_name, last_name, current_character_id, is_admin, 
                       is_blocked, blocked_reason, blocked_at, blocked_by, 
-                      created_at, last_seen, last_proactive_sent_at, proactive_missed_count, proactive_enabled 
+                      created_at, last_seen, last_proactive_sent_at, proactive_missed_count, proactive_enabled, bot_blocked_at 
                FROM users WHERE user_id = %s''',
             (user_id,)
         )
@@ -77,7 +79,8 @@ class UserRepository:
                 last_seen=self._parse_datetime(result['last_seen']),
                 last_proactive_sent_at=result['last_proactive_sent_at'],
                 proactive_missed_count=result['proactive_missed_count'] or 0,
-                proactive_enabled=result['proactive_enabled']
+                proactive_enabled=result['proactive_enabled'],
+                bot_blocked_at=result['bot_blocked_at']
             )
         return None
 
@@ -86,7 +89,7 @@ class UserRepository:
         results = self.db.fetch_all(
             '''SELECT user_id, username, first_name, last_name, current_character_id, is_admin,
                       is_blocked, blocked_reason, blocked_at, blocked_by,
-                      created_at, last_seen, last_proactive_sent_at, proactive_missed_count, proactive_enabled  
+                      created_at, last_seen, last_proactive_sent_at, proactive_missed_count, proactive_enabled, bot_blocked_at  
                FROM users ORDER BY created_at DESC'''
         )
 
@@ -107,7 +110,8 @@ class UserRepository:
                 last_seen=self._parse_datetime(result['last_seen']),
                 last_proactive_sent_at=result['last_proactive_sent_at'],
                 proactive_missed_count=result['proactive_missed_count'] or 0,
-                proactive_enabled=result['proactive_enabled']
+                proactive_enabled=result['proactive_enabled'],
+                bot_blocked_at=result['bot_blocked_at']
             ))
 
         return users
@@ -117,7 +121,7 @@ class UserRepository:
         results = self.db.fetch_all(
             '''SELECT user_id, username, first_name, last_name, is_admin,
                       is_blocked, blocked_reason, blocked_at, blocked_by,
-                      created_at, last_seen, last_proactive_sent_at, proactive_missed_count, proactive_enabled 
+                      created_at, last_seen, last_proactive_sent_at, proactive_missed_count, proactive_enabled, bot_blocked_at 
                FROM users WHERE is_blocked = TRUE ORDER BY blocked_at DESC'''
         )
 
@@ -137,7 +141,8 @@ class UserRepository:
                 last_seen=self._parse_datetime(result['last_seen']),
                 last_proactive_sent_at=result['last_proactive_sent_at'],
                 proactive_missed_count=result['proactive_missed_count'] or 0,
-                proactive_enabled=result['proactive_enabled']
+                proactive_enabled=result['proactive_enabled'],
+                bot_blocked_at=result['bot_blocked_at']
             ))
 
         return blocked_users
@@ -159,7 +164,7 @@ class UserRepository:
             SELECT user_id, username, first_name, last_name, current_character_id,
                    is_admin, is_blocked, blocked_reason, blocked_at, blocked_by,
                    created_at, last_seen,
-                   last_proactive_sent_at, proactive_missed_count, proactive_enabled
+                   last_proactive_sent_at, proactive_missed_count, proactive_enabled, bot_blocked_at
             FROM users
             WHERE is_blocked = FALSE AND proactive_enabled = TRUE
             ORDER BY user_id
@@ -181,20 +186,10 @@ class UserRepository:
                 last_seen=self._parse_datetime(result['last_seen']),
                 last_proactive_sent_at=result['last_proactive_sent_at'],
                 proactive_missed_count=result['proactive_missed_count'] or 0,
-                proactive_enabled=bool(result['proactive_enabled'])
+                proactive_enabled=bool(result['proactive_enabled']),
+                bot_blocked_at=result['bot_blocked_at']
             ))
         return users
-
-    def update_proactive_state(self, user_id: int, last_sent_at: Optional[datetime],
-                               missed_count: int, enabled: bool):
-        """Обновляет состояние проактивных сообщений для пользователя."""
-        self.db.execute_query("""
-            UPDATE users
-            SET last_proactive_sent_at = %s,
-                proactive_missed_count = %s,
-                proactive_enabled = %s
-            WHERE user_id = %s
-        """, (last_sent_at, missed_count, enabled, user_id))
 
     def _parse_datetime(self, dt_value) -> datetime:
         """Парсинг datetime из различных форматов"""

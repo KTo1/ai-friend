@@ -1,10 +1,14 @@
 from telegram import Bot
 from datetime import datetime
 from domain.service.proactive_service import ProactiveService
+from domain.exception.telegram import TelegramExceptions
+
 from infrastructure.database.repositories.user_repository import UserRepository
 from infrastructure.database.repositories.user_stats_repository import UserStatsRepository
 from infrastructure.database.repositories.character_repository import CharacterRepository
+
 from presentation.telegram.message_sender import TelegramMessageSender
+
 from infrastructure.monitoring.logging import StructuredLogger
 
 MaxMessagesSend = 1
@@ -53,7 +57,7 @@ class SendProactiveMessageUseCase:
                 user.user_id, user.current_character_id
             )
 
-            success = await self.telegram_sender.send_message(
+            success, error = await self.telegram_sender.send_message(
                 bot=bot,
                 chat_id=user.user_id,
                 text=message_text
@@ -66,15 +70,21 @@ class SendProactiveMessageUseCase:
                 if user.proactive_missed_count >= MaxMessagesSend:
                     user.proactive_enabled = False
 
-                self.user_repo.update_proactive_state(
-                    user.user_id,
-                    now,
-                    user.proactive_missed_count,
-                    user.proactive_enabled
-                )
+                self.user_repo.save_user(user)
+
                 sent_count += 1
                 self.logger.info(f"Proactive message sent to user {user.user_id}")
             else:
+                if error == TelegramExceptions.Forbidden:
+                    now = datetime.utcnow()
+
+                    user.bot_blocked_at = now
+                    user.proactive_missed_count = MaxMessagesSend
+                    user.proactive_enabled = False
+                    user.last_proactive_sent_at = now
+
+                    self.user_repo.save_user(user)
+
                 self.logger.error(f"Failed to send proactive to user {user.user_id}")
 
         self.logger.info(f"Proactive finished. Sent: {sent_count}, disabled: {disabled_count}")
