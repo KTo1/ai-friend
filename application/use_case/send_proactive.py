@@ -34,7 +34,10 @@ class SendProactiveMessageUseCase:
         sent_count = 0
         disabled_count = 0
 
+        self.logger.info(f"Got {len(users)} users for sending")
+
         for user in users:
+
             user_stats = self.user_stats_repo.get_user_stats(user.user_id)
             if not user_stats:
                 continue
@@ -48,7 +51,7 @@ class SendProactiveMessageUseCase:
 
             seconds_since_last = (datetime.utcnow() - last_message_at).total_seconds()
             if user.proactive_missed_count >= MaxMessagesSend or seconds_since_last < 86400:
-                return
+                continue
 
             if not user.current_character_id:
                 continue
