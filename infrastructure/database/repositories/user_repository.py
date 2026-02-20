@@ -166,7 +166,7 @@ class UserRepository:
                    created_at, last_seen,
                    last_proactive_sent_at, proactive_missed_count, proactive_enabled, bot_blocked_at
             FROM users
-            WHERE is_blocked = FALSE AND proactive_enabled = TRUE
+            WHERE is_blocked = FALSE AND proactive_enabled = TRUE AND current_character_id IS NOT NULL
             ORDER BY user_id
         """)
         users = []
