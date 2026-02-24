@@ -25,7 +25,7 @@ class TariffService:
         return self.tariff_repo.get_default_tariff_plan()
 
     def assign_tariff_to_user(self, user_id: int, tariff_plan_id: int,
-                              duration_days: int = None) -> Tuple[bool, str]:
+                              duration_seconds: int = None) -> Tuple[bool, str]:
         """Назначить тариф пользователю"""
         try:
             # Получаем тариф
@@ -36,10 +36,10 @@ class TariffService:
             user_tariff = self.tariff_repo.get_user_tariff(user_id)
             if not user_tariff or user_tariff.is_expired():
                 expires_at = None
-                if duration_days:
-                    expires_at = datetime.utcnow() + timedelta(days=duration_days)
+                if duration_seconds:
+                    expires_at = datetime.utcnow() + timedelta(seconds=duration_seconds)
             else:
-                expires_at = user_tariff.expires_at + timedelta(days=duration_days)
+                expires_at = user_tariff.expires_at + timedelta(seconds=duration_seconds)
 
             # Назначаем тариф
             success = self.tariff_repo.assign_tariff_to_user(user_id, tariff_plan_id, expires_at)
@@ -47,7 +47,7 @@ class TariffService:
                 self.logger.info(f"Assigned tariff {tariff.name} to user {user_id}")
                 message = f"✅ Пользователю {user_id} назначен тариф '{tariff.name}'"
                 if expires_at:
-                    message += f" на {duration_days} дней (до {expires_at.strftime('%d.%m.%Y')})"
+                    message += f" на {duration_seconds} секунд (до {expires_at.strftime('%d.%m.%Y')})"
                 return True, message
             else:
                 return False, f"❌ Ошибка при назначении тарифа пользователю {user_id}"

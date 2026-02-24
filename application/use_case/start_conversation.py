@@ -28,7 +28,10 @@ class StartConversationUseCase:
         if len(args) > 0:
             user.utm_label = args[0]
 
-        self.user_repo.save_user(user)
+        try:
+            self.user_repo.save_user(user)
+        except Exception as e:
+            self.logger.error(f"Error creating new user {user.user_id}: {e}")
 
         # НАЗНАЧЕНИЕ ТАРИФА ПО УМОЛЧАНИЮ ПРИ ПЕРВОМ СТАРТЕ
         try:
@@ -36,7 +39,7 @@ class StartConversationUseCase:
             if not user_tariff:
                 default_tariff = self.tariff_service.get_default_tariff()
                 if default_tariff:
-                    success, message = self.tariff_service.assign_tariff_to_user(user.user_id, default_tariff.id, duration_days=1)
+                    success, message = self.tariff_service.assign_tariff_to_user(user.user_id, default_tariff.id, duration_seconds=3600)
                     if success:
                         self.logger.info(f"Assigned default tariff '{default_tariff.name}' to new user {user.user_id}")
 

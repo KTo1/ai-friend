@@ -671,27 +671,27 @@ class FriendBot:
         stars = 799
         label = f"Доступ на 30 дней к ИИ подруге"
         title = f"Тарифный план: Премиум"
-        payload = f"payment_30_{user_id}_{user_tariff.tariff_plan_id}"
+        invoice_payload = f"payment_30_{user_id}_{user_tariff.tariff_plan_id}"
         if data.startswith('pay_premium_30_'):
             title = f"Премиум на 30 дней."
             label = f"Спасибо, что выбираете нас! Доступ на 30 дней к ИИ подруге, базовый тариф."
             stars = 799
-            payload = f"payment_30_{user_id}_{user_tariff.tariff_plan_id}"
+            invoice_payload = f"payment_30_{user_id}_{user_tariff.tariff_plan_id}"
         elif data.startswith('pay_premium_90_'):
             title = f"Премиум на 90 дней."
             label = f"Поздравляем! Лучшее соотношение цена/качество!  Доступ на 90 дней к ИИ подруге, вы экономите 480⭐!"
             stars = 1917
-            payload = f"payment_90_{user_id}_{user_tariff.tariff_plan_id}"
+            invoice_payload = f"payment_90_{user_id}_{user_tariff.tariff_plan_id}"
         elif data.startswith('pay_premium_180_'):
             title = f"Премиум на 180 дней."
             label =f"Это лучший тариф для активных пользователей! Доступ на 180 дней к ИИ подруге, вы экономите 1,582⭐!"
             stars = 3212
-            payload = f"payment_180_{user_id}_{user_tariff.tariff_plan_id}"
+            invoice_payload = f"payment_180_{user_id}_{user_tariff.tariff_plan_id}"
         elif data.startswith('pay_premium_360_'):
             title = f"Премиум на 360 дней."
             label = f"Ого! Да это жде максимум выгоды! Кто-то знает толк в экономии! Доступ на 360 дней к ИИ подруге, вы экономите 4,067⭐! "
             stars = 5521
-            payload = f"payment_360_{user_id}_{user_tariff.tariff_plan_id}"
+            invoice_payload = f"payment_360_{user_id}_{user_tariff.tariff_plan_id}"
 
         prices = [
             LabeledPrice(
@@ -705,13 +705,13 @@ class FriendBot:
                 chat_id=chat_id,
                 title=title,
                 description=label,
-                payload=payload,
+                payload=invoice_payload,
                 provider_token="",  # Для Telegram Stars оставляем пустым
                 currency="XTR",  # Код валюты для Telegram Stars
                 prices=prices,
             )
 
-            self.logger.info(f"Invoice created for user {user_id}: premium triff with payload {payload}")
+            self.logger.info(f"Invoice created for user {user_id}: premium triff with payload {invoice_payload}")
 
         except Exception as e:
             self.logger.error(f"Failed to create invoice: {e}")
@@ -739,7 +739,7 @@ class FriendBot:
                 payload_array = payload.split('_')
                 duration, user_id, tariff_plan_id = int(payload_array[1]), int(payload_array[2]), int(payload_array[3])
 
-                success, message = self.manage_tariff_uc.assign_tariff_to_user(user_id, tariff_plan_id, duration_days=duration)
+                success, message = self.manage_tariff_uc.assign_tariff_to_user(user_id, tariff_plan_id, duration_seconds=duration*86400)
                 if success:
                     self.logger.info(f"Successful payment, assigned tariff '{tariff_plan_id}' to user {user_id} on {duration} days")
                     await query.answer(ok=True)

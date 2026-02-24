@@ -28,9 +28,9 @@ class ManageTariffUseCase:
 
     @trace_span("usecase.assign_tariff", attributes={"component": "application"})
     def assign_tariff_to_user(self, user_id: int, tariff_plan_id: int,
-                              duration_days: int = None) -> Tuple[bool, str]:
+                              duration_seconds: int = None) -> Tuple[bool, str]:
         """Назначить тарифный план пользователю"""
-        return self.tariff_service.assign_tariff_to_user(user_id, tariff_plan_id, duration_days)
+        return self.tariff_service.assign_tariff_to_user(user_id, tariff_plan_id, duration_seconds)
 
     @trace_span("usecase.get_user_tariff", attributes={"component": "application"})
     def get_user_tariff_info(self, user_id: int) -> str:
