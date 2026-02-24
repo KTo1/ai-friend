@@ -24,6 +24,10 @@ class StartConversationUseCase:
             first_name=first_name,
             last_name=last_name
         )
+
+        if len(args) > 0:
+            user.utm_label = args[0]
+
         self.user_repo.save_user(user)
 
         # НАЗНАЧЕНИЕ ТАРИФА ПО УМОЛЧАНИЮ ПРИ ПЕРВОМ СТАРТЕ

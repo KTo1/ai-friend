@@ -86,7 +86,8 @@ class PostgreSQLDatabase:
                         last_proactive_sent_at TIMESTAMP,
                         proactive_missed_count INTEGER DEFAULT 0,
                         proactive_enabled BOOLEAN DEFAULT TRUE,
-                        bot_blocked_at TIMESTAMP
+                        bot_blocked_at TIMESTAMP,
+                        utm_label TEXT
                     )
                 ''')
 
