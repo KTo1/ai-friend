@@ -25,6 +25,8 @@ class User:
 
     bot_blocked_at: Optional[datetime] = None
 
+    utm_label: str = ""
+
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = datetime.now()
