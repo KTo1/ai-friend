@@ -1,3 +1,5 @@
+from typing import List
+
 from domain.entity.profile import UserProfile
 from domain.entity.user import User
 from domain.service.tariff_service import TariffService
