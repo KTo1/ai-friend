@@ -15,7 +15,7 @@ class StartConversationUseCase:
         self.logger = StructuredLogger("start_conversation_uc")
 
     @trace_span("usecase.start_conversation", attributes={"component": "application"})
-    def execute(self, user_id: int, username: str, first_name: str, last_name: str) -> str:
+    def execute(self, user_id: int, username: str, first_name: str, last_name: str, args: List[str]) -> str:
         user = User(
             user_id=user_id,
             username=username,
