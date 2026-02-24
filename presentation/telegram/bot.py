@@ -534,7 +534,7 @@ class FriendBot:
         )
 
         response = self.start_conversation_uc.execute(
-            user.id, user.username, user.first_name, user.last_name
+            user.id, user.username, user.first_name, user.last_name,context.args
         )
 
         characters = self.character_repo.get_all_characters(active_only=True)
