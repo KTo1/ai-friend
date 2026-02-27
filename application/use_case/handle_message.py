@@ -83,13 +83,13 @@ class HandleMessageUseCase:
                 user_id, character.id
             )
 
-            profile_data = await self.manage_profile_uc.extract_and_update_profile(user_id, message)
+            profile_data = await self.manage_profile_uc.extract_and_update_profile(user_id, message, character)
 
             # Подготавливаем сообщения для AI
             enhanced_system_prompt = (f"""СИСТЕМНЫЙ ПРОМТП, ПОВЕДЕНИЕ ПЕРСОНАЖА: {character.system_prompt}\n\n 
                                       Текущее состояние сцены (recap) — обязательно учитывай каждое слово перед каждым ответом: {recap_context} \n\n
-                                      ИЗВЛЕЧЕННЫЕ ВОСПОМИНАНИЯ, ИСПОЛЬЗУЙ ИХ В РАЗГОВОРЕ: {rag_context} \n\n
-                                      ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ, ИСПОЛЬЗУЙ ЭТО В РАЗГОВОРЕ, ЕСЛИ КАКИХ-ТО ДАННЫХ НЕТ (NONE), ТО ОЧЕНЬ НЕНАВЯЗЧИВО СПРАШИВАЙ О НИХ:  {profile_data} \n\n""")
+                                      ИЗВЛЕЧЕННЫЕ ВОСПОМИНАНИЯ, используй их в разговоре: {rag_context} \n\n
+                                      ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ, используй его в разговоре, если каких-то данных нет (параметр = None), то в зависимости от контекста уточняй их:  {profile_data} \n\n""")
             messages = self.context_service.prepare_messages_for_ai(
                 enhanced_system_prompt, context_messages, message
             )

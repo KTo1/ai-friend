@@ -1,7 +1,11 @@
-import json
 import re
+import json
+
 from typing import Tuple, Optional, List, Any
+
+from domain.entity.character import Character
 from domain.interfaces.ai_client import AIClientInterface
+
 from infrastructure.monitoring.logging import StructuredLogger
 
 
@@ -23,7 +27,7 @@ class ProfileService:
             'весело', 'рад', 'зол', 'устал'
         ]
 
-    def _build_extraction_prompt(self, message: str) -> List[dict]:
+    def _build_extraction_prompt(self, message: str, character_name: str) -> List[dict]:
         """
         Создает промпт для LLM для извлечения данных профиля в формате JSON.
         """
@@ -32,9 +36,14 @@ class ProfileService:
 Ты — сверхточный и быстрый инструмент для извлечения данных (ETL).
 Твоя задача — проанализировать ОДНО сообщение от пользователя и извлечь из него сущности, связанные с его профилем.
 
-Ты ДОЛЖЕН ответить ИСКЛЮЧИТЕЛЬНО в формате JSON.
-Если какая-то информация отсутствует, верни `null` для этого поля.
-Не добавляй никаких пояснений, только JSON.
+ВАЖНО:
+    - Извлекай информацию ТОЛЬКО о пользователе, который написал сообщение.
+    - Никогда не извлекай имя персонажа или бота как имя пользователя.
+    - Если пользователь обращается к персонажу по имени, это имя не является именем пользователя.
+    - Если сообщение не содержит информации о пользователе, верни null для всех полей.
+    - Ты ДОЛЖЕН ответить ИСКЛЮЧИТЕЛЬНО в формате JSON.
+    - Если какая-то информация отсутствует, верни `null` для этого поля.
+    - Не добавляй никаких пояснений, только JSON.
 
 Формат JSON:
 {
@@ -87,6 +96,9 @@ class ProfileService:
 ---
 """
 
+        if character_name:
+            system_prompt += f"\nИмя текущего персонажа: {character_name}. Не путай его с именем пользователя."
+
         return [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Сообщение: \"{message}\""}
@@ -103,7 +115,7 @@ class ProfileService:
                 return True
         return False
 
-    async def extract_profile_info_llm(self, message: str) -> Tuple[
+    async def extract_profile_info_llm(self, message: str, character: Character) -> Tuple[
         Optional[str], Optional[int], Optional[str], Optional[str], Optional[str]]:
         """
         Извлечение информации о профиле из сообщения с помощью LLM.
@@ -115,7 +127,7 @@ class ProfileService:
             return None, None, None, None, None
 
         # 2. Строим промпт и вызываем LLM
-        prompt = self._build_extraction_prompt(message)
+        prompt = self._build_extraction_prompt(message, character.name)
 
         try:
             # Используем быстрый и дешевый AI-вызов

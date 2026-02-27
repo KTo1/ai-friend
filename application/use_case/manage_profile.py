@@ -1,9 +1,12 @@
+from domain.entity.character import Character
 from domain.entity.profile import UserProfile
 from domain.service.profile_service import ProfileService
+from domain.interfaces.ai_client import AIClientInterface
+
 from infrastructure.database.repositories.profile_repository import ProfileRepository
 from infrastructure.monitoring.tracing import trace_span
 from infrastructure.monitoring.logging import StructuredLogger
-from domain.interfaces.ai_client import AIClientInterface  # <--- 1. Импортируем AIClient
+
 
 
 class ManageProfileUseCase:
@@ -14,10 +17,10 @@ class ManageProfileUseCase:
         self.logger = StructuredLogger("manage_profile_uc")
 
     @trace_span("usecase.extract_profile", attributes={"component": "application"})
-    async def extract_and_update_profile(self, user_id: int, message: str) -> str:
+    async def extract_and_update_profile(self, user_id: int, message: str, character: Character) -> str:
 
         # 5. Вызываем новый async метод LLM
-        name, age, interests, mood, gender = await self.profile_service.extract_profile_info_llm(message)
+        name, age, interests, mood, gender = await self.profile_service.extract_profile_info_llm(message, character)
 
         # Если LLM ничего не вернул (не было триггеров или данных), выходим
         if not any([name, age, interests, mood, gender]):
