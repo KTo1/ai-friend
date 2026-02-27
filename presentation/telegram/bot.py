@@ -572,9 +572,9 @@ class FriendBot:
             self.rag_repo.delete_user_memories(user_id, character.id)
             self.manage_summary_uc.clear_summaries(user_id, character.id)
 
-            success = await self._safe_reply(update, f'🧹 Разговор с {character.name} сброшен! Давай начнем заново! Как твои дела?')
+            success = await self._safe_reply(update, f'🧹 Разговор с {character.name} сброшен! Давай начнем заново! Напиши что-нибудь.')
         else:
-            success = await self._safe_reply(update, '🧹 Давай начнем наш разговор заново! Сначала выбери персонажа с помощью /choose_character')
+            success = await self._safe_reply(update, '🧹 Давай начнем наш разговор заново! Сначала выбери персонажа с помощью /start')
 
     async def limits(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать текущие лимиты пользователя"""

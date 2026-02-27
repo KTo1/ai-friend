@@ -150,20 +150,6 @@ class PostgreSQLDatabase:
                     )
                 ''')
 
-                # Таблица активности пользователей для проактивных сообщений
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS user_activity (
-                        user_id BIGINT PRIMARY KEY REFERENCES users(user_id),
-                        last_message_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        last_proactive_time TIMESTAMP,
-                        message_count INTEGER DEFAULT 0,
-                        timezone_offset INTEGER DEFAULT 0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-
-
                 # Таблица тарифных планов
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS tariff_plans (

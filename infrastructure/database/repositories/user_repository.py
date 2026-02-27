@@ -75,10 +75,10 @@ class UserRepository:
                 is_admin=bool(result['is_admin']),
                 is_blocked=bool(result['is_blocked']),
                 blocked_reason=result['blocked_reason'],
-                blocked_at=self._parse_datetime(result['blocked_at']),
+                blocked_at=result['blocked_at'],
                 blocked_by=result['blocked_by'],
-                created_at=self._parse_datetime(result['created_at']),
-                last_seen=self._parse_datetime(result['last_seen']),
+                created_at=result['created_at'],
+                last_seen=result['last_seen'],
                 last_proactive_sent_at=result['last_proactive_sent_at'],
                 proactive_missed_count=result['proactive_missed_count'] or 0,
                 proactive_enabled=result['proactive_enabled'],
@@ -107,10 +107,10 @@ class UserRepository:
                 is_admin=bool(result['is_admin']),
                 is_blocked=bool(result['is_blocked']),
                 blocked_reason=result['blocked_reason'],
-                blocked_at=self._parse_datetime(result['blocked_at']),
+                blocked_at=result['blocked_at'],
                 blocked_by=result['blocked_by'],
-                created_at=self._parse_datetime(result['created_at']),
-                last_seen=self._parse_datetime(result['last_seen']),
+                created_at=result['created_at'],
+                last_seen=result['last_seen'],
                 last_proactive_sent_at=result['last_proactive_sent_at'],
                 proactive_missed_count=result['proactive_missed_count'] or 0,
                 proactive_enabled=result['proactive_enabled'],
@@ -139,10 +139,10 @@ class UserRepository:
                 is_admin=bool(result['is_admin']),
                 is_blocked=bool(result['is_blocked']),
                 blocked_reason=result['blocked_reason'],
-                blocked_at=self._parse_datetime(result['blocked_at']),
+                blocked_at=result['blocked_at'],
                 blocked_by=result['blocked_by'],
-                created_at=self._parse_datetime(result['created_at']),
-                last_seen=self._parse_datetime(result['last_seen']),
+                created_at=result['created_at'],
+                last_seen=result['last_seen'],
                 last_proactive_sent_at=result['last_proactive_sent_at'],
                 proactive_missed_count=result['proactive_missed_count'] or 0,
                 proactive_enabled=result['proactive_enabled'],
@@ -185,10 +185,10 @@ class UserRepository:
                 is_admin=bool(result['is_admin']),
                 is_blocked=bool(result['is_blocked']),
                 blocked_reason=result['blocked_reason'],
-                blocked_at=self._parse_datetime(result['blocked_at']),
+                blocked_at=result['blocked_at'],
                 blocked_by=result['blocked_by'],
-                created_at=self._parse_datetime(result['created_at']),
-                last_seen=self._parse_datetime(result['last_seen']),
+                created_at=result['created_at'],
+                last_seen=result['last_seen'],
                 last_proactive_sent_at=result['last_proactive_sent_at'],
                 proactive_missed_count=result['proactive_missed_count'] or 0,
                 proactive_enabled=bool(result['proactive_enabled']),
@@ -196,20 +196,3 @@ class UserRepository:
                 utm_label=result['utm_label']
             ))
         return users
-
-    def _parse_datetime(self, dt_value) -> datetime:
-        """Парсинг datetime из различных форматов"""
-        if dt_value is None:
-            return datetime.now()
-
-        if isinstance(dt_value, datetime):
-            return dt_value
-
-        if isinstance(dt_value, str):
-            try:
-                # PostgreSQL возвращает datetime в формате ISO
-                return datetime.fromisoformat(dt_value.replace('Z', '+00:00'))
-            except Exception:
-                return datetime.now()
-
-        return datetime.now()
