@@ -1,6 +1,9 @@
-.PHONY: build up down logs logs-bot restart clean monitor
+.PHONY: rebuild build build-с up down logs logs-bot restart clean monitor
 
 export DOCKER_API_VERSION=1.44
+
+rebuild:
+    docker compose up -d --build --force-recreate --no-deps bot
 
 # Сборка образов
 build-с:
