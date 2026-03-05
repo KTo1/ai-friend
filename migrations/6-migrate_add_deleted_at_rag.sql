@@ -1,0 +1,2 @@
+ALTER TABLE user_rag_memories
+ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;

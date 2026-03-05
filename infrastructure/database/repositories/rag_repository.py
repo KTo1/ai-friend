@@ -22,8 +22,8 @@ class RAGRepository:
             query = '''
                     INSERT INTO user_rag_memories
                     (user_id, character_id, memory_type, content, source_message, importance_score,
-                     embedding, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id \
+                     embedding, created_at, updated_at, deleted_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id \
                     '''
             params = (
                 memory.user_id,
@@ -34,7 +34,8 @@ class RAGRepository:
                 memory.importance_score,
                 embedding_str,  # Используем строку для vector типа
                 memory.created_at,
-                memory.updated_at
+                memory.updated_at,
+                memory.deleted_at
             )
 
             result = self.db.fetch_one(query, params)
@@ -48,9 +49,9 @@ class RAGRepository:
         try:
             results = self.db.fetch_all("""
                 SELECT id, user_id, memory_type, content, source_message, 
-                       importance_score, embedding, created_at, updated_at
+                       importance_score, embedding, created_at, updated_at, deleted_at
                 FROM user_rag_memories 
-                WHERE user_id = %s AND character_id = %s AND importance_score >= %s
+                WHERE user_id = %s AND character_id = %s AND importance_score >= %s AND deleted_at IS NULL
                 ORDER BY importance_score DESC, updated_at DESC
                 LIMIT %s
             """, (user_id, character_id, min_importance, limit))
@@ -65,7 +66,8 @@ class RAGRepository:
                     importance_score=result['importance_score'],
                     embedding=json.loads(result['embedding']) if result['embedding'] else None,
                     created_at=result['created_at'],
-                    updated_at=result['updated_at']
+                    updated_at=result['updated_at'],
+                    deleted_at=result['deleted_at']
                 )
                 memories.append(memory)
             return memories
@@ -82,7 +84,7 @@ class RAGRepository:
             # ВАЖНО: pgvector оператор <=> возвращает косинусное расстояние (1 - cosine similarity)
             # Поэтому: similarity = 1 - distance = cosine similarity
             results = self.db.fetch_all('''
-                                        SELECT id, user_id, memory_type, content, source_message, importance_score, embedding, created_at, updated_at,
+                                        SELECT id, user_id, memory_type, content, source_message, importance_score, embedding, created_at, updated_at, deleted_at,
                                                1 - (embedding <=> %s::vector) as similarity
                                         FROM user_rag_memories
                                         WHERE user_id = %s AND character_id = %s
@@ -130,7 +132,8 @@ class RAGRepository:
                     importance_score=result['importance_score'],
                     embedding=embedding,
                     created_at=result['created_at'],
-                    updated_at=result['updated_at']
+                    updated_at=result['updated_at'],
+                    deleted_at=result['deleted_at']
                 )
                 memories.append(memory)
 
@@ -142,7 +145,7 @@ class RAGRepository:
 
     def delete_user_memories(self, user_id: int, character_id: int) -> bool:
         try:
-            self.db.execute_query("DELETE FROM user_rag_memories WHERE user_id = %s AND character_id = %s", (user_id, character_id))
+            self.db.execute_query("UPDATE user_rag_memories SET deleted_at = %s WHERE user_id = %s AND character_id = %s", (datetime.utcnow(), user_id, character_id))
             return True
         except Exception as e:
             self.logger.error(f'Error deleting user memories: {e}')

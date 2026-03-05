@@ -106,7 +106,7 @@ class SummaryRepository:
                 SELECT id, user_id, character_id, level, content,
                        created_at, updated_at, deleted_at
                 FROM conversation_summaries
-                WHERE user_id = %s AND character_id = %s
+                WHERE user_id = %s AND character_id = %s AND deleted_at IS NULL 
                 ORDER BY level DESC, updated_at DESC
             ''', (user_id, character_id))
 

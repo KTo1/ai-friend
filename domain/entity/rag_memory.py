@@ -29,6 +29,7 @@ class RAGMemory:
     embedding: Optional[List[float]] = None
     created_at: datetime = None
     updated_at: datetime = None
+    deleted_at: datetime = None
 
     def __post_init__(self):
         if self.created_at is None:
@@ -47,6 +48,7 @@ class RAGMemory:
             'embedding': self.embedding,
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat(),
+            'deleted_at': self.deleted_at.isoformat()
         }
 
     @classmethod
@@ -60,5 +62,6 @@ class RAGMemory:
             importance_score=data['importance_score'],
             embedding=data.get('embedding'),
             created_at=datetime.fromisoformat(data['created_at']),
-            updated_at=datetime.fromisoformat(data['updated_at'])
+            updated_at=datetime.fromisoformat(data['updated_at']),
+            deleted_at=datetime.fromisoformat(data['deleted_at'])
         )

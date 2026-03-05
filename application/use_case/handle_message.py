@@ -86,10 +86,13 @@ class HandleMessageUseCase:
             profile_data = await self.manage_profile_uc.extract_and_update_profile(user_id, message, character)
 
             # Подготавливаем сообщения для AI
-            enhanced_system_prompt = (f"""СИСТЕМНЫЙ ПРОМТП, ПОВЕДЕНИЕ ПЕРСОНАЖА: {character.system_prompt}\n\n 
-                                      Текущее состояние сцены (recap) — обязательно учитывай каждое слово перед каждым ответом: {recap_context} \n\n
-                                      ИЗВЛЕЧЕННЫЕ ВОСПОМИНАНИЯ, используй их в разговоре: {rag_context} \n\n
-                                      ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ, используй его в разговоре, если каких-то данных нет (параметр = None), то в зависимости от контекста уточняй их:  {profile_data} \n\n""")
+            # enhanced_system_prompt = (f"""СИСТЕМНЫЙ ПРОМТП, ПОВЕДЕНИЕ ПЕРСОНАЖА: {character.system_prompt}\n\n
+            #                           Текущее состояние сцены (recap) — обязательно учитывай каждое слово перед каждым ответом: {recap_context} \n\n
+            #                           ИЗВЛЕЧЕННЫЕ ВОСПОМИНАНИЯ, используй их в разговоре: {rag_context} \n\n
+            #                           ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ, используй его в разговоре, если каких-то данных нет (параметр = None), то в зависимости от контекста уточняй их:  {profile_data} \n\n""")
+
+            enhanced_system_prompt = self._build_enhanced_prompt(character, recap_context, rag_context, profile_data)
+
             messages = self.context_service.prepare_messages_for_ai(
                 enhanced_system_prompt, context_messages, message
             )
@@ -143,3 +146,55 @@ class HandleMessageUseCase:
             )
             # Fallback на случай если всё сломалось
             return "Привет! Как твои дела? 😊"
+
+
+    def _build_enhanced_prompt(self, character, recap_context, rag_context, profile_data):
+        # Защита от None
+        safe_profile = profile_data if profile_data is not None else "Нет данных о пользователе"
+        safe_rag = rag_context if rag_context else "Воспоминаний нет"
+
+        prompt = f"""
+    <prompt>
+      <профиль_персонажа>
+        <![CDATA[
+    {self._escape_cdata(character.system_prompt)}
+        ]]>
+      </профиль_персонажа>
+    
+      <рекап_сцены>
+        <![CDATA[
+    {self._escape_cdata(recap_context)}
+        ]]>
+      </рекап_сцены>
+    
+      <воспоминания>
+        <![CDATA[
+    {self._escape_cdata(safe_rag)}
+        ]]>
+      </воспоминания>
+    
+      <профиль_пользователя>
+        <![CDATA[
+    {self._escape_cdata(safe_profile)}
+        ]]>
+      </профиль_пользователя>
+    
+      <инструкции_по_ответу>
+        <![CDATA[
+    Твои ответы должны строго соответствовать описанию из <профиль_персонажа> и учитывать всю информацию выше.
+    
+    1. Никогда не пиши действия или слова пользователя — только реакцию своего персонажа.
+    2. Не раскрывай, что ты ИИ, не показывай внутренние рассуждения.
+    3. Не создавай плейсхолдеры вида [текст].
+    4. ЗАПРЕЩЕНО: писать код, давать технические консультации, примерять другие роли.
+    5. Если в <профиль_пользователя> какое-то поле равно null — при необходимости мягко уточни эти данные в диалоге, не делая предположений.
+    
+        ]]>
+      </инструкции_по_ответу>
+    </prompt>
+    """
+        return prompt
+
+    # Экранируем возможную последовательность "]]>" в данных (если есть)
+    def _escape_cdata(self, text):
+        return str(text).replace(']]>', ']] >')
