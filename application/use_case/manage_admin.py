@@ -17,28 +17,6 @@ class ManageAdminUseCase:
         """Проверить, является ли пользователь администратором"""
         return self.admin_service.is_admin(user_id)
 
-    @trace_span("usecase.get_admin_list", attributes={"component": "application"})
-    def get_admin_list(self) -> str:
-        """Получить список администраторов"""
-        admins = self.admin_service.get_admin_users()
-
-        if not admins:
-            return "📋 Список администраторов пуст"
-
-        message = "👑 **Список администраторов:**\n\n"
-        for i, admin in enumerate(admins, 1):
-            username = f"@{admin.username}" if admin.username else "без username"
-            message += f"{i}. {admin.first_name or 'Без имени'} {username} (ID: {admin.user_id})\n"
-
-            # Безопасное форматирование дат
-            created_str = self._format_datetime(admin.created_at)
-            last_seen_str = self._format_datetime(admin.last_seen)
-
-            message += f"   📅 Зарегистрирован: {created_str}\n"
-            message += f"   👀 Последний раз: {last_seen_str}\n\n"
-
-        return message
-
     @trace_span("usecase.get_user_stats", attributes={"component": "application"})
     def get_user_stats(self) -> str:
         """Получить статистику пользователей"""
@@ -115,6 +93,7 @@ class ManageAdminUseCase:
                 name = user.first_name or "Без имени"
                 role = "👑" if user.is_admin else "👤"
                 status = "🚫" if user.is_blocked else "🟢"
+                utm = f"{user.utm_label}"
 
                 message += f"{i}. {role} {status} {name} {username}\n"
                 message += f"   🆔 ID: {user.user_id}\n"
@@ -135,6 +114,9 @@ class ManageAdminUseCase:
                         message += f"   🕒 Был {days_ago} дней назад\n"
                     else:
                         message += f"   🕒 Неактивен {days_ago} дней\n"
+
+                if utm:
+                    message += f"   ⚠️ {utm}\n"
 
                 message += "\n"
 

@@ -40,11 +40,6 @@ class AdminService:
 
         return False
 
-    def get_admin_users(self) -> List[User]:
-        """Получить список всех администраторов"""
-        all_users = self._get_all_users()
-        return [user for user in all_users if user.is_admin]
-
     def get_all_users(self) -> List[User]:
         """Получить список всех пользователей"""
         return self._get_all_users()

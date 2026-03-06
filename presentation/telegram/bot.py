@@ -797,20 +797,6 @@ class FriendBot:
         if not success:
             self.logger.error(f"Failed to send admin users list to user {user_id}")
 
-    async def admin_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Показать список администраторов"""
-        user_id = update.effective_user.id
-
-        # Проверяем права администратора
-        if not self.manage_admin_uc.is_user_admin(user_id):
-            success = await self._safe_reply(update, "❌ Эта команда доступна только администраторам")
-            return
-
-        message = self.manage_admin_uc.get_admin_list()
-        success = await self._safe_reply(update, message)
-        if not success:
-            self.logger.error(f"Failed to send admin list to user {user_id}")
-
     async def admin_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать статистику пользователей"""
         user_id = update.effective_user.id
@@ -864,7 +850,6 @@ class FriendBot:
 
     📋 **Списки и информация:**
     • `/admin_users [страница]` - список всех пользователей
-    • `/admin_list` - список администраторов
     • `/admin_blocked_list` - список заблокированных
 
     📊 **Статистика и информация:**
@@ -1317,7 +1302,6 @@ class FriendBot:
         self.application.add_handler(CommandHandler("admin_users", self.admin_users))
         self.application.add_handler(CommandHandler("admin_help", self.admin_help))
         self.application.add_handler(CommandHandler("admin_stats", self.admin_stats))
-        self.application.add_handler(CommandHandler("admin_list", self.admin_list))
         self.application.add_handler(CommandHandler("admin_userinfo", self.admin_userinfo))
         self.application.add_handler(CommandHandler("admin_health", self.admin_health))
 
