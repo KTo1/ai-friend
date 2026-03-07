@@ -83,6 +83,17 @@ class MetricsCollector:
         self.summary_effectiveness = Histogram('summary_effectiveness_ratio',
                                               'Message compression ratio (messages/summary_tokens)')
 
+        self.payments_initiated = Counter(
+            'payments_initiated_total',
+            'Total number of payment initiations',
+            ['tariff_plan_id']
+        )
+        self.payments_completed = Counter(
+            'payments_completed_total',
+            'Total number of completed payments',
+            ['tariff_plan_id']
+        )
+
     def start_metrics_server(self):
         """Запустить сервер метрик"""
         if self._server_started:
@@ -166,6 +177,12 @@ class MetricsCollector:
 
     def record_summary_generation_time(self, summary_type: str, duration: float):
         self.summary_generation_time.labels(type=summary_type).observe(duration)
+
+    def record_payment_initiated(self, tariff_plan_id: int):
+        self.payments_initiated.labels(tariff_plan_id=str(tariff_plan_id)).inc()
+
+    def record_payment_completed(self, tariff_plan_id: int):
+        self.payments_completed.labels(tariff_plan_id=str(tariff_plan_id)).inc()
 
 
 class Timer:

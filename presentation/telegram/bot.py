@@ -3,8 +3,6 @@ import asyncio
 
 import tempfile
 
-from datetime import datetime, timedelta
-
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, LabeledPrice
 from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, ApplicationBuilder, PreCheckoutQueryHandler
 from telegram.constants import ParseMode
@@ -22,6 +20,7 @@ from infrastructure.database.repositories.user_stats_repository import UserStats
 from infrastructure.database.repositories.rate_limit_tracking_repository import RateLimitTrackingRepository
 from infrastructure.database.repositories.character_repository import CharacterRepository
 from infrastructure.database.repositories.summary_repository import SummaryRepository
+from infrastructure.database.repositories.payment_repository import PaymentRepository
 
 from infrastructure.ai.ai_factory import AIFactory
 from infrastructure.monitoring.logging import setup_logging, StructuredLogger
@@ -76,6 +75,7 @@ class FriendBot:
         self.rate_limit_tracking_repo = RateLimitTrackingRepository(self.database)
         self.character_repo = CharacterRepository(self.database)
         self.summary_repo = SummaryRepository(self.database)
+        self.payment_repo = PaymentRepository(self.database)
 
         # Используем фабрику для создания AI клиента!
         self.ai_client = AIFactory.create_client()
@@ -692,6 +692,17 @@ class FriendBot:
             label = f"Ого! Да это жде максимум выгоды! Кто-то знает толк в экономии! Доступ на 360 дней к ИИ подруге, вы экономите 4,067⭐! "
             stars = 5521
             invoice_payload = f"payment_360_{user_id}_{user_tariff.tariff_plan_id}"
+
+        payment_id = self.payment_repo.create_payment(
+            user_id=user_id,
+            tariff_plan_id=user_tariff.tariff_plan_id,
+            amount=stars,
+            payload=invoice_payload
+        )
+        if not payment_id:
+            self.logger.error(f"Failed to create payment record for user {user_id}")
+
+        metrics_collector.record_payment_initiated(user_tariff.tariff_plan_id)
 
         prices = [
             LabeledPrice(
