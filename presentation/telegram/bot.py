@@ -675,7 +675,7 @@ class FriendBot:
         if data.startswith('pay_premium_30_'):
             title = f"Премиум на 30 дней."
             label = f"Спасибо, что выбираете нас! Доступ на 30 дней к ИИ подруге, базовый тариф."
-            stars = 1
+            stars = 799
             invoice_payload = f"payment_30_{user_id}_{user_tariff.tariff_plan_id}"
         elif data.startswith('pay_premium_90_'):
             title = f"Премиум на 90 дней."
