@@ -23,7 +23,7 @@ class PaymentRepository:
                                       tariff_plan_id             INTEGER NOT NULL,
                                       amount                     INTEGER NOT NULL,
                                       currency                   TEXT    NOT NULL DEFAULT 'XTR',
-                                      payload                    TEXT    NOT NULL UNIQUE,
+                                      payload                    TEXT    ,
                                       status                     TEXT    NOT NULL DEFAULT 'initiated',
                                       telegram_payment_charge_id TEXT,
                                       provider_payment_charge_id TEXT,
@@ -33,10 +33,6 @@ class PaymentRepository:
                                       CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE,
                                       CONSTRAINT fk_tariff FOREIGN KEY (tariff_plan_id) REFERENCES tariff_plans (id) ON DELETE CASCADE
                                   );
-                                  """)
-            self.db.execute_query("""
-                                  CREATE INDEX IF NOT EXISTS idx_payments_user_id ON payments (user_id);
-                                  CREATE INDEX IF NOT EXISTS idx_payments_payload ON payments (payload);
                                   """)
             self.logger.info("Payments table initialized")
         except Exception as e:
@@ -56,12 +52,12 @@ class PaymentRepository:
                                        RETURNING id
                                        """, (user_id, tariff_plan_id, amount, currency, payload,
                                              datetime.utcnow(), datetime.utcnow()))
-            return result['id'] if result else None
+            return result['id'] if result else 0
         except Exception as e:
             self.logger.error(f"Error creating payment for user {user_id}: {e}")
-            return None
+            return 0
 
-    def update_payment_success(self, payload: str,
+    def update_payment_success(self, payment_id: int,
                                telegram_payment_charge_id: str,
                                provider_payment_charge_id: str) -> bool:
         """
@@ -74,19 +70,19 @@ class PaymentRepository:
                                       telegram_payment_charge_id = %s,
                                       provider_payment_charge_id = %s,
                                       updated_at                 = %s
-                                  WHERE payload = %s
+                                  WHERE id = %s
                                     AND status = 'initiated'
                                   """, (telegram_payment_charge_id, provider_payment_charge_id,
-                                        datetime.utcnow(), payload))
+                                        datetime.utcnow(), payment_id))
             return True
         except Exception as e:
-            self.logger.error(f"Error updating payment success for payload {payload}: {e}")
+            self.logger.error(f"Error updating payment success for payment_id {payment_id}: {e}")
             return False
 
-    def get_payment_by_payload(self, payload: str) -> Optional[Dict[str, Any]]:
+    def get_payment_by_id(self, payment_id: int) -> Optional[Dict[str, Any]]:
         """Возвращает запись платежа по payload (для отладки)."""
         try:
-            return self.db.fetch_one("SELECT * FROM payments WHERE payload = %s", (payload,))
+            return self.db.fetch_one("SELECT * FROM payments WHERE id = %s", (payment_id,))
         except Exception as e:
-            self.logger.error(f"Error fetching payment by payload {payload}: {e}")
+            self.logger.error(f"Error fetching payment by ID {payment_id}: {e}")
             return None

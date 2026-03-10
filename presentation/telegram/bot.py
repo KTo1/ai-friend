@@ -675,7 +675,7 @@ class FriendBot:
         if data.startswith('pay_premium_30_'):
             title = f"Премиум на 30 дней."
             label = f"Спасибо, что выбираете нас! Доступ на 30 дней к ИИ подруге, базовый тариф."
-            stars = 799
+            stars = 1
             invoice_payload = f"payment_30_{user_id}_{user_tariff.tariff_plan_id}"
         elif data.startswith('pay_premium_90_'):
             title = f"Премиум на 90 дней."
@@ -689,7 +689,7 @@ class FriendBot:
             invoice_payload = f"payment_180_{user_id}_{user_tariff.tariff_plan_id}"
         elif data.startswith('pay_premium_360_'):
             title = f"Премиум на 360 дней."
-            label = f"Ого! Да это жде максимум выгоды! Кто-то знает толк в экономии! Доступ на 360 дней к ИИ подруге, вы экономите 4,067⭐! "
+            label = f"Ого! Да это же максимум выгоды! Кто-то знает толк в экономии! Доступ на 360 дней к ИИ подруге, вы экономите 4,067⭐! "
             stars = 5521
             invoice_payload = f"payment_360_{user_id}_{user_tariff.tariff_plan_id}"
 
@@ -699,8 +699,10 @@ class FriendBot:
             amount=stars,
             payload=invoice_payload
         )
-        if not payment_id:
+        if payment_id == 0:
             self.logger.error(f"Failed to create payment record for user {user_id}")
+
+        invoice_payload = f"{invoice_payload}_{payment_id}"
 
         metrics_collector.record_payment_initiated(user_tariff.tariff_plan_id)
 
@@ -773,6 +775,31 @@ class FriendBot:
     async def handle_successful_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         """Обработка успешного платежа"""
         response = f"✅ *Оплата успешно завершена! Поздравляем с покупкой, можете продолжить общение.*"
+
+        message = update.effective_message
+
+        successful_payment = message.successful_payment
+        payload = successful_payment.invoice_payload
+        if not successful_payment:
+            return None
+
+        payload_array = payload.split('_')
+        tariff_plan_id, payment_id  = int(payload_array[3]), int(payload_array[4])
+
+        # Обновляем запись в БД
+        success = self.payment_repo.update_payment_success(
+            payment_id=payment_id,
+            telegram_payment_charge_id=successful_payment.telegram_payment_charge_id,
+            provider_payment_charge_id=successful_payment.provider_payment_charge_id
+        )
+        if success:
+            self.logger.info(f"Payment succeeded for payment_id {payment_id}")
+
+            # Метрика: успешный платёж
+            if tariff_plan_id:
+                metrics_collector.record_payment_completed(tariff_plan_id)
+        else:
+            self.logger.warning(f"Payment record not found or already updated for payload {payload}")
 
         escaped_text = MarkdownFormatter.format_text(response, ParseMode.MARKDOWN_V2)
         await update.effective_message.reply_text(
