@@ -115,6 +115,7 @@ class FriendBot:
             user_repo=self.user_repo,
             user_stats_repo=self.user_stats_repo,
             character_repo=self.character_repo,
+            conversation_repo=self.conversation_repo,
             proactive_service=self.proactive_service,
             telegram_sender=self.telegram_sender
         )

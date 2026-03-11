@@ -2,6 +2,7 @@ from telegram import Bot
 from datetime import datetime
 from domain.service.proactive_service import ProactiveService
 from domain.exception.telegram import TelegramExceptions
+from infrastructure.database.repositories.conversation_repository import ConversationRepository
 
 from infrastructure.database.repositories.user_repository import UserRepository
 from infrastructure.database.repositories.user_stats_repository import UserStatsRepository
@@ -18,11 +19,13 @@ class SendProactiveMessageUseCase:
                  user_repo: UserRepository,
                  user_stats_repo: UserStatsRepository,
                  character_repo: CharacterRepository,
+                 conversation_repo: ConversationRepository,
                  proactive_service: ProactiveService,
                  telegram_sender: TelegramMessageSender):
         self.user_repo = user_repo
         self.user_stats_repo = user_stats_repo
         self.character_repo = character_repo
+        self.conversation_repo = conversation_repo
         self.proactive_service = proactive_service
         self.telegram_sender = telegram_sender
         self.logger = StructuredLogger('send_proactive_uc')
@@ -58,6 +61,14 @@ class SendProactiveMessageUseCase:
 
             message_text = await self.proactive_service.generate_proactive_message(
                 user.user_id, user.current_character_id
+            )
+
+            # Сохраняем ответ бота с учетом лимита контекста
+            self.conversation_repo.save_message(
+                user.user_id,
+                user.current_character_id,
+                "assistant",
+                message_text
             )
 
             success, error = await self.telegram_sender.send_message(
