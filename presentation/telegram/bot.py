@@ -36,6 +36,7 @@ from domain.service.rag_service import RAGService
 from domain.service.limit_service import LimitService
 from domain.service.summary_service import SummaryService
 from domain.service.proactive_service import ProactiveService
+from domain.service.payment_service import PaymentService
 
 from domain.entity.character import Character
 
@@ -91,6 +92,7 @@ class FriendBot:
         )
         self.summary_service = SummaryService(self.ai_client)
         self.proactive_service = ProactiveService(self.ai_client, self.tariff_service, self.conversation_repo, self.character_repo, self.profile_repo)
+        self.payment_service = PaymentService()
 
         self.health_checker = HealthChecker(self.database)
 
