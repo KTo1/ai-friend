@@ -670,6 +670,8 @@ class FriendBot:
 
         user_tariff = self.tariff_service.get_user_tariff(user_id)
 
+        link = self.payment_service.tinkoff_get_link(100000, user_id, 13)
+
         stars = 799
         label = f"Доступ на 30 дней к ИИ подруге"
         title = f"Тарифный план: Премиум"

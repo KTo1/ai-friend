@@ -4,8 +4,8 @@ import requests
 
 from infrastructure.monitoring.logging import StructuredLogger
 
-TINKOFF_TERMINAL_KEY = "1773075305869DEMO"
-TINKOFF_TERMINAL_PASSWORD = "4uuPwrAeG40G4z2h"
+TINKOFF_TERMINAL_KEY = "1773075305892"
+TINKOFF_TERMINAL_PASSWORD = "_Zv9Fe82C499SJm&"
 TINKOFF_INIT_URL = "https://securepay.tinkoff.ru/v2/Init"
 
 class PaymentService:
